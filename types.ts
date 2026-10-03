@@ -158,6 +158,9 @@ export const EXPANSION_ERAS = [
 
 export type ExpansionEra = typeof EXPANSION_ERAS[number];
 
+export const AI_PILOT_STEPS = ['automation_recognized', 'pilot_announced', 'pilot_ready'] as const;
+export type AIPilotStep = typeof AI_PILOT_STEPS[number];
+
 export interface ExpansionProgress {
   era: ExpansionEra;
   transition: null | {
@@ -167,7 +170,7 @@ export interface ExpansionProgress {
 }
 
 export interface GameState {
-  // Persisted progression authority; no active expansion gameplay yet.
+  // Persisted progression authority; AI task behavior is not implemented yet.
   expansionProgress: ExpansionProgress;
 
   // Resources

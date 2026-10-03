@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GameState, Upgrade, ResourceType, UpgradeCategory, LogMessage, CampaignType } from '../types';
+import { GameState, Upgrade, ResourceType, UpgradeCategory, LogMessage, CampaignType, AIPilotStep } from '../types';
 import { UPGRADES, checkUpgradeVisibility } from '../constants';
 import { Filter, Activity, Lock, Cpu, Terminal as TerminalIcon, Users, Scale, FlaskConical, Briefcase, Server, Wand2, FileCode, Database, Brain, GitGraph, TrendingUp, DollarSign, Megaphone, Send, Smartphone, Tv, Zap, Infinity as InfinityIcon, Sparkles, FileText, Scan, Coffee, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
@@ -24,6 +24,8 @@ interface Props {
   onHardReset: () => void; 
   onTogglePDF: () => void;
   onVisitCoffee: () => void;
+  pilotIntroduction: { step: AIPilotStep | null; available: boolean };
+  onReviewPilot: () => void;
 }
 
 const TerminalLine: React.FC<{ log: LogMessage }> = ({ log }) => {
@@ -57,7 +59,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot }) => {
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -137,6 +139,21 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
     <div className="flex flex-col h-full bg-slate-950 border-r border-slate-800 overflow-hidden relative">
       
       {/* Tabs */}
+      {pilotIntroduction.step && (
+        <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
+          {pilotIntroduction.step === 'pilot_ready' ? <>
+            <p className="font-bold text-emerald-400">AI pilot approved</p>
+            <p className="mt-1">Next: try it on a real task when the trial becomes available. Current tools are unchanged.</p>
+          </> : <>
+            <p className="font-bold text-emerald-400">Management update available</p>
+            <button onClick={onReviewPilot} disabled={!pilotIntroduction.available}
+              className="mt-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed">
+              {pilotIntroduction.step === 'automation_recognized' ? 'Review automation progress' : 'Review AI pilot'}
+            </button>
+            {!pilotIntroduction.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
+          </>}
+        </div>
+      )}
       <div className="flex border-b border-slate-800 bg-slate-900/50 shrink-0">
           <button 
             onClick={() => setActiveTab('ops')}

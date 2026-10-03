@@ -3,6 +3,12 @@ import { GameState, Upgrade, UpgradeCategory, ResourceType, GameEvent, ChatScena
 export const TICK_RATE_MS = 200; // 5 ticks per second
 export const HISTORY_LENGTH = 50;
 
+// Purchased processing, query and storage automation; no score-only handoff.
+export const isAIPilotEligible = (state: GameState): boolean =>
+    state.upgrades['pandas_scripts'] === true &&
+    state.upgrades['sql_optimization'] === true &&
+    state.upgrades['local_server'] === true;
+
 export const TERMINAL_FLAVOR_TEXT = [
     // Tech Jargon
     "pip install pandas --upgrade",

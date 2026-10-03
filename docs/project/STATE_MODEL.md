@@ -2,11 +2,11 @@
 
 This inventory covers every `types.ts::GameState` field. Initial values come from `types.ts::INITIAL_STATE`; writes come from `hooks/useGameEngine.ts::useGameEngine` actions/update loop and `constants.ts` effects. All fields below are serialized to `the_analyst_save_v1`, even derived values. Persistence does not imply validation or an invariant enforced on every write.
 
-S0 adds implemented, inert expansion progression infrastructure to the original source baseline. This is not active tier gameplay and does not change original resource/update rules. The design authority remains [AI_EXPANSION.md](../design/AI_EXPANSION.md), whose baseline evidence describes the pre-S0 snapshot.
+S0 added persisted expansion progression infrastructure; S1 adds the organisational AI pilot introduction only. Original resource/update rules remain unchanged and no AI task behavior exists yet. The design authority remains [AI_EXPANSION.md](../design/AI_EXPANSION.md), whose baseline evidence describes the pre-S0 snapshot.
 
 | Purpose | Fields and initial values | Meaning / writers |
 | --- | --- | --- |
-| Expansion progression (S0) | `expansionProgress={era:'analyst',transition:null}` | Persisted `ExpansionProgress`: `era: ExpansionEra`; `transition: null \| {targetEra: ExpansionEra, step: string}`. No gameplay/UI consumer or score-based advancement. Engine-only transition actions are available for future callers. |
+| Expansion progression (S0/S1) | `expansionProgress={era:'analyst',transition:null}` | Persisted `ExpansionProgress`: `era: ExpansionEra`; `transition: null \| {targetEra: ExpansionEra, step: string}`. S1 eligibility offers two acknowledgement beats; engine owns advancement. Scores never establish an era. |
 | Resources | `rawData=100`, `maxStorage=500`, `cleanData=0`, `metrics=0`, `dashboards=0`, `models=0` | Raw buffer/capacity, processed buffer, accumulated metrics and installed output counts. Production, manual/minigame actions, upgrades, chat/events and coffee alter them. Only raw has a real capacity. |
 | Scores and quality | `pu=0`, `tu=10`, `metricQuality=0.5` | Perceived/true understanding and TU production quality factor. PU/TU are both progression inputs and spendable resources. Quality is mutable, not recomputed; not universally clamped to 0..1. |
 | Base rates | `rawDataRate=2`, `cleanDataRate=0`, `metricRate=0` | Stored per-second base throughput, changed by upgrades. They exclude marketing, prestige and temporary meeting penalties; not derived from purchase records on load. |
@@ -32,20 +32,38 @@ S0 adds implemented, inert expansion progression infrastructure to the original 
 
 The source does not separate a save schema from runtime state. Complexity, observability, packet loss, price deltas and chart snapshots are derived **and** persisted. World economy and entropy are evolved accumulators. Rates and resource totals persist directly rather than being rebuilt from `upgrades`. `prestige.multiplier` duplicates a derived expression but the engine uses `1 + level*0.1` instead (`useGameEngine` main interval and reward actions).
 
-Transient unsaved values include `stateRef`, hook-local `isRebooting`, Workstation tab/floating messages, TeamComms open state, DataStream boot state and all minigame local scores/boards/canvas data. `DashboardPanel` computes funnel impressions as `rawData*10` and campaign totals from active campaigns; these are UI derivations, not central fields.
+Transient unsaved values include `stateRef`, hook-local `isRebooting`, App's `pilotOpen`, Workstation tab/floating messages, TeamComms open state, DataStream boot state and all minigame local scores/boards/canvas data. Engine-returned `pilotIntroduction` is derived presentation state, not a saved field. `DashboardPanel` computes funnel impressions as `rawData*10` and campaign totals from active campaigns; these are UI derivations, not central fields.
 
 ## localStorage boundary
 
-The sole localStorage key and all read/write/remove sites are in `hooks/useGameEngine.ts`: initializer read, two-second autosave write, `ascend` immediate write and `hardReset` removal. No source writes API configuration or independent component settings to localStorage. Hydration preserves unknown top-level JSON fields by spreading `parsed`; it restores selected nested defaults/functions and does not validate existing numeric ranges. S0 adds the era/transition object below; there is still no active narrative campaign, save version field or completed-run history.
+The sole localStorage key and all read/write/remove sites are in `hooks/useGameEngine.ts`: initializer read, two-second autosave write, `ascend` immediate write and `hardReset` removal. No source writes API configuration or independent component settings to localStorage. Hydration preserves unknown top-level JSON fields by spreading `parsed`; it restores selected nested defaults/functions and does not validate existing numeric ranges. S1 uses the era/transition object below; there is no save version field or completed-run history.
 
-## Expansion progression authority (S0)
+## Expansion progression authority (S0/S1)
 
 `types.ts::EXPANSION_ERAS` defines `analyst`, `automation`, `ai_pilot`, `acceleration`, `connected_enterprise`, `good_enough`, `lightspeed`, and `governance_crisis`; `ExpansionEra` derives its union from that list. `ExpansionProgress` contains only `era` and `transition`. No counters, thresholds, Velocity, demand, verification, permissions or provenance fields were introduced.
 
 `hydrateState` merges default progression with saved fields. A missing or unsupported era defaults to `analyst`, regardless of PU/TU, prestige, upgrades or tick. Missing/null transition defaults to null; incomplete/invalid transitions are discarded unless they contain a known `targetEra` and string `step`. Valid transition objects and unknown saved progression fields are preserved. This validation is confined to the new object; it is not a general migration framework and does not repair existing hydration quirks.
 
-`useGameEngine::beginExpansionTransition(targetEra, step)` starts a pending transition only if the target is known, differs from the current era, the step is nonblank and no transition is already pending. `establishExpansionEra(targetEra)` requires a matching pending target, then commits that era and clears the transition. These actions change only progression, do not implement narrative completion checks or a tier-order policy, and are not called by baseline gameplay or passed to UI components. Future gameplay must use this explicit engine boundary instead of independently inferring eras.
+`useGameEngine::beginExpansionTransition(targetEra, step)` refuses a same-era target, blank step or replacement of a pending transition. S1 additionally restricts `ai_pilot` starts to eligible analysts at `automation_recognized`. `establishExpansionEra(targetEra)` requires a matching pending target, then commits that era and clears the transition; S1 explicitly refuses `ai_pilot` establishment because actual pilot use is not implemented. Neither generic action is passed to UI components. The UI receives only `advancePilotIntroduction(expectedStep)`, guarded against stale/double acknowledgements and active baseline overlays.
 
 The existing whole-state autosave serializes progression without changing the save key. Existing ascension/factory-reset functions were untouched; reconstruction from INITIAL_STATE naturally returns progression to analyst/null. There is no new reset gate or prestige preservation rule for expansion.
 
 S0 validation: npm ci/build/lint passed. Isolated browser smoke passed fresh autosave/reload, ordinary and high-score legacy saves, partial objects, valid future transitions, invalid-era fallback and unknown-field preservation. A temporary deterministic hook/timer harness compared original baseline fresh state plus 20 ticks and found exact equality excluding only progression; it also checked guarded actions. This is limited validation, not an exhaustive gameplay regression suite.
+
+## AI pilot introduction (S1)
+
+Eligibility is exactly three true purchase flags: `pandas_scripts`, `sql_optimization`, `local_server` (`constants.ts::isAIPilotEligible`). These establish existing pipeline/query/storage investment, without new usage counters or claims that minigames were completed. Python ETL costs 50 PU and appears at raw >200; SQL costs 200 PU at clean >500; server costs 150 PU at raw >450 (`UPGRADES`, `checkUpgradeVisibility`). All are reachable through ordinary Act I cleaning/inflow/storage and scripts/mapping. No model, KPI, segmentation, ending or score threshold is required; no upgrade was rebalanced.
+
+`useGameEngine` offers the transition when eligible with `era='analyst'` and no pending transition. `types.ts::AI_PILOT_STEPS` supplies stable identifiers:
+
+| Step | Era | Explicit player acknowledgement |
+| --- | --- | --- |
+| `automation_recognized` | `analyst` | Recognize existing automation, advance to `automation` / `pilot_announced` |
+| `pilot_announced` | `automation` | Acknowledge approved enterprise trial, advance to `pilot_ready` |
+| `pilot_ready` | `automation` | Terminal S1 state; target remains `ai_pilot`, no trial/establishment action |
+
+Steps use the existing two-second whole-state autosave. Reload restores the saved step and leaves its dialog closed; unsaved acknowledgements within the ordinary autosave window may be repeated. Unknown valid future step strings remain preserved by hydration but are not presented as S1 content. High-score legacy saves default to analyst; an eligible legacy purchase combination offers recognition, never skips the narrative.
+
+UI entry: `Workstation` shows a management-update button across tabs, using engine-derived `pilotIntroduction`; `App` opens `AIPilotIntroduction` only on request. “Later” closes presentation without clearing progression. The engine disables presentation/advancement during any minigame, coffee, meeting, baseline event, blocking task, ascension or reboot. A new blocker closes the dialog; the same step can be reopened afterward. Baseline `EVENTS`, `eventHistory`, effects and simulation continue unchanged. Pilot-ready shows approval and the next real-task trial as unavailable until later work. No AI assistance, bonuses, Velocity or demand changes exist.
+
+Focused validation: `node scripts/check-ai-pilot.cjs` uses installed TypeScript and Node with stubbed hooks/timers; browser smoke covers actual UI, saves and reloads. It is not an exhaustive baseline gameplay suite.

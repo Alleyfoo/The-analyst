@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGameEngine } from './hooks/useGameEngine';
 import { WorldStats } from './components/WorldStats';
 import { DataStream } from './components/DataStream';
 import { Workstation } from './components/Workstation';
 import { DashboardPanel } from './components/DashboardPanel';
 import { EventModal } from './components/EventModal';
+import { AIPilotIntroduction } from './components/AIPilotIntroduction';
 import { SpaghettiOverlay } from './components/SpaghettiOverlay';
 import { PandasMappingGame } from './components/PandasMappingGame';
 import { SQLMiningGame } from './components/SQLMiningGame';
@@ -23,7 +24,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction } = useGameEngine();
+  const [pilotOpen, setPilotOpen] = useState(false);
+  useEffect(() => {
+    if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready') setPilotOpen(false);
+  }, [pilotIntroduction.available, pilotIntroduction.step]);
 
   // Get first active event if any
   const activeEvent = state.activeEvents.length > 0 ? state.activeEvents[0] : null;
@@ -151,6 +156,13 @@ const App: React.FC = () => {
 
       {/* Event Overlay */}
       <EventModal event={activeEvent} onDismiss={actions.dismissEvent} />
+      {pilotOpen && pilotIntroduction.available && pilotIntroduction.step && pilotIntroduction.step !== 'pilot_ready' && (
+        <AIPilotIntroduction
+          step={pilotIntroduction.step}
+          onContinue={actions.advancePilotIntroduction}
+          onLater={() => setPilotOpen(false)}
+        />
+      )}
 
       {/* Top Bar */}
       <WorldStats 
@@ -192,6 +204,8 @@ const App: React.FC = () => {
                 onHardReset={actions.hardReset}
                 onTogglePDF={actions.togglePDFMode}
                 onVisitCoffee={actions.startCoffeeBreak}
+                pilotIntroduction={pilotIntroduction}
+                onReviewPilot={() => setPilotOpen(true)}
             />
         </div>
 

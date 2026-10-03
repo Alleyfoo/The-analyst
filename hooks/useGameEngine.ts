@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT } from '../constants';
+import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep } from '../types';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -511,25 +511,63 @@ export const useGameEngine = () => {
 
   // Actions
   // Future progression callers must begin a transition before establishing its era.
-  // No baseline gameplay invokes these actions.
-  const beginExpansionTransition = (targetEra: ExpansionEra, step: string) => {
+  const beginExpansionTransition = useCallback((targetEra: ExpansionEra, step: string) => {
     setState(prev => {
       if (!isExpansionEra(targetEra) || !step.trim()) return prev;
       if (prev.expansionProgress.transition || prev.expansionProgress.era === targetEra) return prev;
+      if (targetEra === 'ai_pilot' && (prev.expansionProgress.era !== 'analyst' ||
+          step !== 'automation_recognized' || !isAIPilotEligible(prev))) return prev;
       return {
         ...prev,
         expansionProgress: { ...prev.expansionProgress, transition: { targetEra, step } },
       };
     });
-  };
+  }, []);
 
   const establishExpansionEra = (targetEra: ExpansionEra) => {
     setState(prev => {
       if (!isExpansionEra(targetEra)) return prev;
+      // S1 introduces the pilot only. Actual use/establishment belongs to later work.
+      if (targetEra === 'ai_pilot') return prev;
       if (prev.expansionProgress.transition?.targetEra !== targetEra) return prev;
       return {
         ...prev,
         expansionProgress: { ...prev.expansionProgress, era: targetEra, transition: null },
+      };
+    });
+  };
+
+  const eligibleForPilot = isAIPilotEligible(state);
+  useEffect(() => {
+    if (state.expansionProgress.era === 'analyst' && !state.expansionProgress.transition && eligibleForPilot) {
+      beginExpansionTransition('ai_pilot', 'automation_recognized');
+    }
+  }, [eligibleForPilot, state.expansionProgress, beginExpansionTransition]);
+
+  const pendingPilot = state.expansionProgress.transition;
+  const pilotStep = pendingPilot?.targetEra === 'ai_pilot'
+    ? AI_PILOT_STEPS.find(step => step === pendingPilot.step) ?? null
+    : null;
+  const canPresentPilotIntroduction = (snapshot: GameState) =>
+    !isRebooting && !snapshot.isAscending && !snapshot.blockingTask &&
+    !snapshot.coffeeBreak.active && !snapshot.boardMeeting.active && snapshot.activeEvents.length === 0 &&
+    !snapshot.spaghettiMode && !snapshot.pandasMode && !snapshot.sqlMode && !snapshot.modelMode &&
+    !snapshot.miningMode && !snapshot.flowMode && !snapshot.buzzwordMode && !snapshot.pdfMode;
+
+  const advancePilotIntroduction = (expectedStep: AIPilotStep) => {
+    setState(prev => {
+      const transition = prev.expansionProgress.transition;
+      if (!canPresentPilotIntroduction(prev) || transition?.targetEra !== 'ai_pilot' ||
+          transition.step !== expectedStep) return prev;
+      if (expectedStep !== 'automation_recognized' && expectedStep !== 'pilot_announced') return prev;
+      if (prev.expansionProgress.era !== 'analyst' && prev.expansionProgress.era !== 'automation') return prev;
+      return {
+        ...prev,
+        expansionProgress: {
+          ...prev.expansionProgress,
+          era: 'automation',
+          transition: { ...transition, step: expectedStep === 'automation_recognized' ? 'pilot_announced' : 'pilot_ready' },
+        },
       };
     });
   };
@@ -1030,8 +1068,9 @@ export const useGameEngine = () => {
   return {
     state,
     isRebooting,
+    pilotIntroduction: { step: pilotStep, available: canPresentPilotIntroduction(state) },
     actions: {
-      beginExpansionTransition, establishExpansionEra,
+      beginExpansionTransition, establishExpansionEra, advancePilotIntroduction,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,
