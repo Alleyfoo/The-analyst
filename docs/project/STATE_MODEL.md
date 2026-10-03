@@ -1,0 +1,36 @@
+# Central state model
+
+This inventory covers every `types.ts::GameState` field. Initial values come from `types.ts::INITIAL_STATE`; writes come from `hooks/useGameEngine.ts::useGameEngine` actions/update loop and `constants.ts` effects. All fields below are serialized to `the_analyst_save_v1`, even derived values. Persistence does not imply validation or an invariant enforced on every write.
+
+| Purpose | Fields and initial values | Meaning / writers |
+| --- | --- | --- |
+| Resources | `rawData=100`, `maxStorage=500`, `cleanData=0`, `metrics=0`, `dashboards=0`, `models=0` | Raw buffer/capacity, processed buffer, accumulated metrics and installed output counts. Production, manual/minigame actions, upgrades, chat/events and coffee alter them. Only raw has a real capacity. |
+| Scores and quality | `pu=0`, `tu=10`, `metricQuality=0.5` | Perceived/true understanding and TU production quality factor. PU/TU are both progression inputs and spendable resources. Quality is mutable, not recomputed; not universally clamped to 0..1. |
+| Base rates | `rawDataRate=2`, `cleanDataRate=0`, `metricRate=0` | Stored per-second base throughput, changed by upgrades. They exclude marketing, prestige and temporary meeting penalties; not derived from purchase records on load. |
+| Derived health | `complexity=10`, `observability=100`, `packetLoss=0` | Recomputed each simulation tick. Complexity from installed output/rates; observability from complexity; packet loss from discarded inflow. Initial observability differs from the first computed value. |
+| Minigame gates | `spaghettiMode`, `pandasMode`, `sqlMode`, `modelMode`, `miningMode`, `flowMode`, `buzzwordMode`, `pdfMode`, all `false` | Overlay activation flags, toggles and Eric challenge effects. These are not puzzle progress or unlock flags. |
+| World | `worldStats={economy:50,socialTrust:50,environment:50,entropy:0}` | Economy drifts toward a TU-dependent target; trust changes through selected effects; entropy changes through simulation/effects. Environment has no gameplay writer beyond initialization/hydration/reset. |
+| Market | `market={unlocked:false,stockPrice:10,ownedShares:0,history:[],lastPriceDelta:0}` | Permanent-in-run unlock flag, mutable price and owned quantity. History entries `{tick,price,trueValue}` keep 30 samples; price delta and true-value samples are derived/stored. Buy/sell change PU/shares. |
+| Clock | `tick=0`, `startTime=Date.now()` | Tick drives meetings, tasks, campaigns and coffee cooldown. `startTime` is saved but not used for offline progression; initial timestamp is evaluated when the module loads. |
+| Logging | `logs=[initial system message]` | Entries `{id,text,type,timestamp}`. Loop/addLog usually trim to 100; several actions append without trimming. Mixed ordering. |
+| Chats | `activeChats=[]` | Entries `{id,scenarioId,sender,message,responses,timestamp,isUrgent}`. Responses carry label/description/type/effect/optional task duration. Functions restored from static scenario definitions on hydration. |
+| Meeting | `boardMeeting={active:false,target:0,progress:0,timeRemaining:0,penaltyEndTime:0}` | Progress/seconds count; penalty expiration is a tick. Loop and specific manual/minigame actions update progress. |
+| Blocking task | `blockingTask=null` | When active: `{name,startTick,durationTicks,chatId,responseIndex}`. Stores a pending response reference, not a captured effect or task function. Effect evaluates current state when completed. |
+| Purchases | `upgrades={}` | ID-to-boolean record used by purchase guards and feature gates. Static `Upgrade.visible/purchased` are definition scaffolding, not updated purchase state. |
+| Events | `activeEvents=[]`, `eventHistory=[]` | Active definition objects with condition/effect functions; IDs recorded when offered, not when acknowledged. `dismissEvent` applies effect. Static `triggered` flag is not used to enforce once-only behavior. |
+| Marketing | `activeCampaigns=[]` | Each `{id,name,type,duration,timeLeft,cost,effectiveness,generatedRaw,generatedPU}`. `type` is email/social/influencer/tv, not a narrative campaign. Lifetimes in ticks; counters record pre-prestige yields, not storage-accepted raw. Expired campaigns are discarded. |
+| Prestige / ending | `prestige={level:0,currency:0,multiplier:1,timestamp:0}`, `isAscending=false` | Ascension accumulates level and Insight currency; stores multiplier and date. Runtime production recomputes multiplier from level. Currency has no spender. `isAscending` freezes main simulation and opens ending UI. |
+| Rival | `rival={active:false,name:'10x Engineer Eric',cleanData:0,metrics:0,lastMockTick:0}` | Automated competitor totals and mock cooldown; Buzzword claims transfer clean data. |
+| Relationships | `relationships={}`, `lastCoffeeTick=-9999` | Sender scores change on chat choices/Buzzword claims; no enforced -100..100 clamp despite type comment. Coffee uses tick cooldown. |
+| Coffee | `coffeeBreak={active:false,character:'',mood:'neutral',dialogue:'',effectDescription:''}` | Chosen encounter presentation; reward/penalty already applied on start. Closing changes only active flag. |
+| Chart history | `history=[]` | Entries `{tick,pu,tu,revenue}`; 50 samples. Revenue is `economy*1000`, a display projection, not spendable income. |
+
+## Derived versus persistent
+
+The source does not separate a save schema from runtime state. Complexity, observability, packet loss, price deltas and chart snapshots are derived **and** persisted. World economy and entropy are evolved accumulators. Rates and resource totals persist directly rather than being rebuilt from `upgrades`. `prestige.multiplier` duplicates a derived expression but the engine uses `1 + level*0.1` instead (`useGameEngine` main interval and reward actions).
+
+Transient unsaved values include `stateRef`, hook-local `isRebooting`, Workstation tab/floating messages, TeamComms open state, DataStream boot state and all minigame local scores/boards/canvas data. `DashboardPanel` computes funnel impressions as `rawData*10` and campaign totals from active campaigns; these are UI derivations, not central fields.
+
+## localStorage boundary
+
+The sole localStorage key and all read/write/remove sites are in `hooks/useGameEngine.ts`: initializer read, two-second autosave write, `ascend` immediate write and `hardReset` removal. No source writes API configuration or independent component settings to localStorage. Hydration preserves unknown top-level JSON fields by spreading `parsed`; it only restores selected nested defaults/functions and does not validate numeric ranges. No explicit act, era, chapter, campaign progression, save version field or completed-run history exists.
