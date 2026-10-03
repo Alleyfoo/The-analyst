@@ -7,7 +7,10 @@ These files describe the **existing implementation**, preserved in baseline comm
 - [STATE_MODEL.md](STATE_MODEL.md): complete central state inventory and derived data.
 - [KNOWN_QUIRKS.md](KNOWN_QUIRKS.md): confirmed logic defects, discrepancies and open concerns.
 - [EXTENSION_BOUNDARIES.md](EXTENSION_BOUNDARIES.md): existing seams for later work, without an expansion design.
+- [DEVELOPMENT_BASELINE.md](DEVELOPMENT_BASELINE.md): dependency snapshot and minimal runtime validation of unchanged source.
 
 Evidence names repository-relative source paths and functions/components. Inspection covered every tracked baseline file: root source/configuration/README plus all 20 components and `hooks/useGameEngine.ts`. `.env.local` was identified as private and excluded; its contents were not read.
 
 Validation on 2026-10-03: `npm run build` reaches `vite build` but fails because `vite` is unavailable; `npm run lint` reaches `tsc --noEmit` but fails because `tsc` is unavailable. There is no `test` script, test suite or lockfile in this snapshot. No dependencies were installed, and no end-to-end playthrough was performed. Findings below are source-based, not runtime reproductions.
+
+Follow-up reproducibility validation on the same date installed existing declared dependencies and retained `package-lock.json`. Build and lint now pass; initial rendering and local autosave/reload passed a minimal isolated browser smoke check. The paragraph above records the original audit environment, not the current validation result. Production source remains identical to the original baseline; gameplay suspicions were not exercised. See DEVELOPMENT_BASELINE.md and the validation classifications in KNOWN_QUIRKS.md.

@@ -1,6 +1,24 @@
 # Known quirks — preserved
 
-All findings are from baseline source inspection. “Confirmed” means the branch/contradiction follows directly from code; no runtime playthrough was performed. Nothing here was fixed.
+The original findings below are from baseline source inspection. “Confirmed” in those sections means the branch/contradiction follows directly from code. A subsequent minimal runtime smoke check is recorded separately below; it was not a gameplay playthrough. Nothing here was fixed.
+
+## Reproducibility validation — 2026-10-03
+
+### Confirmed runtime bug
+
+None newly observed within the minimal smoke scope. In an isolated headless Chromium context at 1440x1000, the initial game, Ops/Market/Ads/Terminal tabs, Clean Data, Analyze, Visit Break Room and initial upgrade controls rendered. No uncaught page errors or console errors were captured across initial navigation and reload. `useGameEngine` autosave created parseable `the_analyst_save_v1`; reload logged save loading, preserved `startTime`/capacity and continued the saved tick (9 to 18). This does not validate endgame, minigame lifecycle or all gameplay actions.
+
+### Build/tooling issues and warnings
+
+- `npm install` with npm 11.12.1 / Node 24.14.1 succeeded (112 packages added, audit reported zero vulnerabilities). No lockfile existed; npm was selected from README commands. Generated lockfile version 3 is retained. No package declarations or production source were changed. Subsequent installs should use `npm ci`.
+- `npm run build` passed with Vite 6.4.3. It warned that `/index.css` does not exist and left that reference for runtime resolution. It also warned about a >500 kB minified chunk (reported JS bundle 910.09 kB, gzip 269.56 kB). No changes were made to suppress warnings.
+- `npm run lint` (`tsc --noEmit`, TypeScript 5.8.3) passed. There is no separate lint/typecheck/test script or test suite.
+- Browser console warned that `cdn.tailwindcss.com` should not be used in production. The CDN dependency was preserved. No failed network requests were observed in this development smoke; this does not prove missing `/index.css` or `/vite.svg` resolve correctly in production deployment.
+- The first smoke script used an overly narrow accessible button name (`Clean Data` without its existing `Manual ETL` label) and failed its locator assertion. Correcting only the temporary test selector made the smoke pass; this was a test-harness issue, not an application defect.
+
+### Source-only suspicion not reproduced
+
+All original gameplay defects, description discrepancies and suspicions below retain their source-based evidence status. The smoke did not attempt to reproduce circular unlocks, sandbox ending re-entry, tick-zero coffee, delayed-task overwrites, StrictMode action side effects or minigame timing/lifecycle concerns.
 
 ## Confirmed logic defects and unreachable content
 
