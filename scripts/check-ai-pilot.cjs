@@ -1,4 +1,4 @@
-// Focused S1/S2 checks using installed TypeScript, Node assertions and stubbed React/timers.
+// Focused S1-S3/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
 // Browser smoke separately verifies actual rendering and persistence.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -11,7 +11,8 @@ const baseline = '1263845279e9afd65ac05a6a1ac809e9bc70ee3c';
 const purchases = { pandas_scripts: true, sql_optimization: true, local_server: true };
 
 function mount(seed = null, original = false) {
-  const modules = {}, slots = [], refs = [], effects = [], callbacks = [], intervals = new Map();
+  const modules = {}, slots = [], refs = [], effects = [], callbacks = [], intervals = new Map(), timeouts = new Map();
+  let reloads = 0;
   let cursor, refCursor, effectCursor, callbackCursor, dirty, api, nextInterval = 0, saved = seed && JSON.stringify(seed);
   const react = {
     useState(initial) {
@@ -45,7 +46,9 @@ function mount(seed = null, original = false) {
     vm.runInNewContext(output, {
       exports, require: spec => spec === 'react' ? react : load(spec.includes('constants') ? 'constants.ts' : 'types.ts'),
       Date: FixedDate, Math: math, console: { log() {}, error(error) { throw error; } },
-      localStorage: { getItem: () => saved, setItem: (_key, value) => { saved = value; } },
+      localStorage: { getItem: () => saved, setItem: (_key, value) => { saved = value; }, removeItem: () => { saved = null; } },
+      window: { location: { reload: () => { reloads++; } } },
+      setTimeout: (fn, ms) => { const id = ++nextInterval; timeouts.set(id, { fn, ms }); return id; },
       setInterval: (fn, ms) => { const id = ++nextInterval; intervals.set(id, { fn, ms }); return id; },
       clearInterval: id => intervals.delete(id),
     }, { filename: name });
@@ -68,6 +71,11 @@ function mount(seed = null, original = false) {
     state: () => JSON.parse(JSON.stringify(slots[0])),
     presentation: () => api.pilotIntroduction,
     queueAttempt: () => api.sqlQueueAttemptId,
+    deferred: () => load('constants.ts').isAscensionDeferred(slots[0]),
+    rebooting: () => api.isRebooting,
+    timeout(ms) { const entry = [...timeouts.entries()].find(([, timer]) => timer.ms === ms); assert(entry, 'expected delayed reset'); timeouts.delete(entry[0]); entry[1].fn(); flush(); },
+    saved: () => saved && JSON.parse(saved),
+    reloads: () => reloads,
     action(name, ...args) { const result = api.actions[name](...args); flush(); return result; },
     purchase(id) { api.actions.purchaseUpgrade(load('constants.ts').UPGRADES.find(upgrade => upgrade.id === id)); flush(); },
     tick() { [...intervals.values()].find(i => i.ms === 200).fn(); flush(); },
@@ -123,7 +131,7 @@ for (const blocker of ['spaghettiMode', 'pandasMode', 'sqlMode', 'modelMode', 'm
   const blocked = mount({ ...eligibleSeed, [blocker]: true });
   assert.equal(blocked.presentation().available, false, blocker);
   blocked.action('advancePilotIntroduction', 'automation_recognized');
-  assert.deepEqual(blocked.state().expansionProgress, progress('automation_recognized'));
+  assert.deepEqual(blocked.state().expansionProgress, blocker === 'isAscending' ? { era: 'analyst', transition: null } : progress('automation_recognized'));
 }
 for (const block of [{ coffeeBreak: { active: true } }, { boardMeeting: { active: true, timeRemaining: 30 } }, { blockingTask: { name: 'Busy' } }, { activeEvents: [{ id: 'storage_full_warning' }] }]) {
   const blocked = mount({ ...eligibleSeed, ...block });
@@ -131,11 +139,12 @@ for (const block of [{ coffeeBreak: { active: true } }, { boardMeeting: { active
   blocked.action('advancePilotIntroduction', 'automation_recognized');
   assert.deepEqual(blocked.state().expansionProgress, progress('automation_recognized'));
 }
-const ending = mount({ ...eligibleSeed, tu: 110 });
-ending.purchase('project_omniscience');
+const ending = mount({ ...eligibleSeed, tu: 10, isAscending: true, upgrades: { ...purchases, project_omniscience: true } });
 assert.equal(ending.state().isAscending, true);
 assert.equal(ending.presentation().available, false);
-assert.deepEqual(ending.state().expansionProgress, progress('automation_recognized'));
+assert.deepEqual(ending.state().expansionProgress, { era: 'analyst', transition: null });
+ending.action('beginExpansionTransition', 'ai_pilot', 'automation_recognized');
+assert.deepEqual(ending.state().expansionProgress, { era: 'analyst', transition: null }, 'open baseline ending cannot start handoff');
 ending.action('cancelAscension');
 assert.equal(ending.presentation().available, true);
 assert.deepEqual(ending.state().expansionProgress, progress('automation_recognized'));
@@ -231,11 +240,11 @@ rollout.action('advancePilotIntroduction', 'demand_pending');
 assert.deepEqual(rollout.state().aiReviewQueue, { pending: 3, completed: 0, wave: 1 });
 const firstWaveSeed = rollout.save();
 const omniQueue = mount({ ...firstWaveSeed, tu: 110 });
+const beforeOmniQueue = omniQueue.state();
 omniQueue.purchase('project_omniscience');
-assert.equal(omniQueue.state().isAscending, true);
+assert.deepEqual(omniQueue.state(), beforeOmniQueue, 'queue OMNISCIENCE attempt has no effects');
+assert.equal(omniQueue.state().isAscending, false);
 assert.deepEqual(omniQueue.state().aiReviewQueue, firstWaveSeed.aiReviewQueue);
-omniQueue.action('openNextAIReview'); assert.equal(omniQueue.queueAttempt(), null);
-omniQueue.action('cancelAscension');
 omniQueue.action('openNextAIReview'); assert.equal(typeof omniQueue.queueAttempt(), 'number');
 compareTicks(firstWaveSeed);
 for (let completed = 0; completed < 3; completed++) {
@@ -313,4 +322,40 @@ for (let i = 0; i < 6; i++) {
 assert.deepEqual(finalWave.state().aiReviewQueue, { pending: 0, completed: 6, wave: 2 });
 finalWave.action('openNextAIReview'); assert.equal(finalWave.queueAttempt(), null);
 assert.equal(finalWave.state().expansionProgress.era, 'ai_pilot', 'no acceleration or regeneration');
-console.log('PASS: S1/S2 checks plus S3 finite waves, explicit establishment, reward parity, manual isolation, issued/duplicate/stale/reload guards, save recovery and baseline economy. Browser smoke covers actual SQL execution.');
+const baselineProgress = { era: 'analyst', transition: null };
+for (const tu of [99, 100, 135]) {
+  const seed = { tu, pu: 10000, prestige: { level: 2, currency: 7 }, expansionProgress: baselineProgress };
+  const current = mount(seed), original = mount(seed, true);
+  assert.equal(current.deferred(), false);
+  for (const game of [current, original]) game.purchase('project_omniscience');
+  const actual = current.state(), expected = original.state(); delete actual.aiReviewQueue; delete expected.aiReviewQueue;
+  assert.deepEqual(actual, expected, 'baseline purchase/cost/flag/log matches original at TU ' + tu);
+  if (tu < 100) continue;
+  for (const game of [current, original]) { game.action('ascend'); assert.equal(game.rebooting(), true); game.timeout(3000); }
+  const currentNG = current.saved(), originalNG = original.saved(); delete currentNG.expansionProgress; delete currentNG.aiReviewQueue; delete originalNG.expansionProgress; delete originalNG.aiReviewQueue;
+  assert.deepEqual(currentNG, originalNG, 'baseline NG+ reset and prestige match original');
+  assert.equal(current.reloads(), original.reloads());
+}
+const sandbox = mount({ tu: 100, expansionProgress: baselineProgress });
+sandbox.purchase('project_omniscience'); sandbox.action('cancelAscension');
+assert.equal(sandbox.state().isAscending, false);
+assert.equal(sandbox.state().upgrades.project_omniscience, true);
+const sandboxBefore = sandbox.state(); sandbox.purchase('project_omniscience');
+assert.deepEqual(sandbox.state(), sandboxBefore, 'original one-shot sandbox quirk preserved');
+const gatedProgress = [progress('automation_recognized'), { era: 'analyst', transition: { targetEra: 'acceleration', step: 'future' } },
+  ...['automation', 'ai_pilot', 'acceleration', 'connected_enterprise', 'good_enough', 'lightspeed', 'governance_crisis'].map(era => ({ era, transition: null })),
+  ...['pilot_announced', 'pilot_ready', 'pilot_success', 'demand_pending', 'rollout_review', 'rollout_success'].map(progress)];
+for (const expansionProgress of gatedProgress) {
+  const game = mount({ tu: 500, expansionProgress, aiReviewQueue: { pending: 6, completed: 0, wave: 2 } });
+  assert.equal(game.deferred(), true);
+  const before = game.state(); game.purchase('project_omniscience'); game.action('ascend');
+  assert.deepEqual(game.state(), before, 'deferred paths change no TU/flags/era/queue');
+  assert.equal(game.rebooting(), false, 'direct ascend cannot bypass gate');
+  assert.equal(mount(game.save()).deferred(), true, 'gate derived after reload');
+}
+const openMixed = mount({ isAscending: true, expansionProgress: { era: 'ai_pilot', transition: null } });
+openMixed.action('ascend'); assert.equal(openMixed.rebooting(), true, 'older open mixed ending is retained, not migrated');
+const reset = mount({ expansionProgress: { era: 'ai_pilot', transition: null }, aiReviewQueue: { pending: 6, completed: 0, wave: 2 } });
+reset.action('hardReset'); assert.equal(reset.rebooting(), true); reset.timeout(2000);
+assert.equal(reset.saved(), null); assert.equal(reset.reloads(), 1, 'factory reset remains available during expansion');
+console.log('PASS: S1-S3 regression and G1 baseline purchase/NG+/sandbox equivalence, already-open ending/handoff, all-era deferral, side-effect-free purchase/direct reset guards, gate reload, factory reset, queue/reward preservation. Hooks/timers are stubbed; Chromium covers UI.');

@@ -36,7 +36,9 @@ The current ending is `project_omniscience`: visible above 30 TU, purchased for 
 
 Known baseline quirks require separate decisions, not silent repairs: circular model unlock, circular dashboard unlock, invisible segmentation, sandbox/ending re-entry, tick-zero coffee hydration and delayed chat overwrite behavior. Further timing and lifecycle concerns remain source-only suspicions. See [KNOWN_QUIRKS](../project/KNOWN_QUIRKS.md).
 
-**OPEN QUESTIONS.** The Act I boundary relative to tiers 0/1 and its existing ending is unresolved. “Tier” describes organisational progression; it must not silently reinterpret existing prestige as an era or turn the inaccessible model branch into a mandatory baseline prerequisite. Decide separately whether a preserved baseline mode exists and whether the expansion branches before, at or after the original ending.
+**EXPLICIT G1 DECISION (2026-10-04).** The original Ascension remains available only before expansion progression begins (`analyst` with no transition). Entering expansion defers gameplay Ascension until the expansion ending later supplies its own end-state choice. An already-open original ending retains its choices and postpones handoff; Return to Sandbox can then begin eligible expansion. Factory reset remains exempt. G1 does not implement that later choice or fix the original ending re-entry quirk.
+
+**OPEN QUESTIONS.** “Tier” describes organisational progression; it must not silently reinterpret existing prestige as an era or turn the inaccessible model branch into a mandatory baseline prerequisite. A separate baseline-mode selector is not established by this boundary decision.
 
 ## 3. PU / TU / Velocity model
 
@@ -178,7 +180,9 @@ The player distinguishes symptom repair from rule repair: correcting affected pr
 
 **BASELINE LIMIT.** No Restore action currently exists. `hardReset` is a factory reset that deletes the save; it is not prestige. Workstation's ASCEND button invokes the buy-once OMNISCIENCE upgrade, while `ascend` handles the actual reboot. UI-only gating would not govern all relevant actions. Locking or rerouting these paths changes behavior and needs an explicitly scoped implementation order.
 
-**OPEN QUESTIONS.** Where expansion gating starts relative to the preserved Act I ending; how existing ending-screen saves are treated; recoverable progression if an incident is contained early; whether a baseline-only route remains; and whether the factory reset is expressly exempt. Do not reinterpret a user-requested save wipe as gameplay escape without deciding this separately.
+**G1 RESOLUTION.** Gating starts at any non-null transition or non-analyst era. Already-open ending screens remain intact, including legacy mixed saves; no migration framework is introduced. Factory reset is explicitly exempt. The later expansion ending's release mechanism is not implemented here.
+
+**OPEN QUESTIONS.** Recoverable progression if an incident is contained early; a separate baseline-only mode; and exact expansion ending conditions remain undecided.
 
 ## 12. Access Matrix ending — Govern the Machine
 
@@ -237,7 +241,7 @@ The primary design/baseline tension is preserving current ascension while adding
 
 | Priority | Decision needed | Why it cannot be assumed |
 | --- | --- | --- |
-| Before implementation | Where does Act I hand off, and is baseline-only play retained? | The complete original game already has an ending and New Game+; the work order preserves them while requiring later reset gates |
+| Before a separate mode selector | Is a distinct baseline-only mode needed? | G1 preserves the original ending before expansion and defers it afterward; it does not add a separate mode selector |
 | Before model evolution | Preserve each known quirk, add a separately scoped expansion route, or authorize a fix in another order? | Model/dashboard circularity and ending re-entry affect prerequisites; fixes are not authorized here |
 | Before save design | Where is era authority stored; how do legacy saves, mid-transition saves and reset histories behave? | No era schema exists; loaded scores must not skip required experience |
 | Before balancing | What measures Capacity, Demand, Verification and Velocity; what thresholds and pacing apply? | The causal distinction is locked but numbers/formulas are not |

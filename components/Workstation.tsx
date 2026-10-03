@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GameState, Upgrade, ResourceType, UpgradeCategory, LogMessage, CampaignType, AIPilotStep } from '../types';
-import { UPGRADES, checkUpgradeVisibility } from '../constants';
+import { UPGRADES, checkUpgradeVisibility, isAscensionDeferred } from '../constants';
 import { Filter, Activity, Lock, Cpu, Terminal as TerminalIcon, Users, Scale, FlaskConical, Briefcase, Server, Wand2, FileCode, Database, Brain, GitGraph, TrendingUp, DollarSign, Megaphone, Send, Smartphone, Tv, Zap, Infinity as InfinityIcon, Sparkles, FileText, Scan, Coffee, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -123,6 +123,7 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
 
   // Check for ascension availability
   const canAscend = state.tu >= 100 && !state.isAscending;
+  const ascensionDeferred = isAscensionDeferred(state);
 
   const categories = [
       { id: UpgradeCategory.Tooling, icon: Cpu, label: "Tooling" },
@@ -220,16 +221,17 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
                                  <InfinityIcon size={24} className="text-purple-400" />
                              </div>
                              <div>
-                                 <div className="text-purple-300 text-sm font-bold uppercase tracking-wider">Ascension Available</div>
-                                 <div className="text-slate-300 text-xs">Singularity threshold reached. Reset simulation for permanent power.</div>
+                                 <div className="text-purple-300 text-sm font-bold uppercase tracking-wider">{ascensionDeferred ? 'ASCENSION DEFERRED' : 'Ascension Available'}</div>
+                                 <div className="text-slate-300 text-xs">{ascensionDeferred ? 'ORGANISATIONAL TRANSFORMATION IN PROGRESS' : 'Singularity threshold reached. Reset simulation for permanent power.'}</div>
                              </div>
                          </div>
                          <button 
+                            disabled={ascensionDeferred}
                             // Simulate buying the upgrade which triggers ascension
                             onClick={() => onBuyUpgrade(UPGRADES.find(u => u.id === 'project_omniscience')!)}
-                            className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded shadow-lg transition-transform hover:scale-105"
+                            className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded shadow-lg transition-transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                          >
-                             ASCEND
+                             {ascensionDeferred ? 'DEFERRED' : 'ASCEND'}
                          </button>
                     </motion.div>
                 )}
@@ -422,6 +424,7 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
                                 <div className="space-y-2">
                                     {catUpgrades.map(u => {
                                         const isPurchased = state.upgrades[u.id];
+                                        const isDeferred = u.id === 'project_omniscience' && ascensionDeferred;
                                         let canAfford = false;
                                         if (u.cost.resource === 'PU') {
                                             canAfford = state.pu >= u.cost.amount;
@@ -437,11 +440,11 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
                                         return (
                                             <button
                                                 key={u.id}
-                                                disabled={isPurchased || !canAfford}
+                                                disabled={isPurchased || !canAfford || isDeferred}
                                                 onClick={() => onBuyUpgrade(u)}
                                                 className={clsx(
                                                     "w-full text-left p-3 rounded border transition-all flex justify-between items-start group relative overflow-hidden",
-                                                    isPurchased 
+                                                    isDeferred ? "bg-purple-900/10 border-purple-800 opacity-70 cursor-not-allowed" : isPurchased
                                                         ? "bg-slate-900/30 border-slate-800/50 opacity-60" 
                                                         : canAfford
                                                             ? (u.category === UpgradeCategory.Endgame ? "bg-purple-900/20 border-purple-500 hover:bg-purple-900/40" : 
@@ -468,6 +471,7 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
                                                         </span>
                                                     </div>
                                                     <p className="text-[10px] md:text-[11px] text-slate-500 mt-1 leading-tight">{u.description}</p>
+                                                    {isDeferred && <p className="text-[10px] text-purple-300 mt-1">ASCENSION DEFERRED — ORGANISATIONAL TRANSFORMATION IN PROGRESS</p>}
                                                 </div>
                                                 {!isPurchased && (
                                                     <div className="flex flex-col items-end shrink-0 relative z-10">

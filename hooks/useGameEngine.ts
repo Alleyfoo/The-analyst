@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible } from '../constants';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -557,7 +557,7 @@ export const useGameEngine = () => {
   // Future progression callers must begin a transition before establishing its era.
   const beginExpansionTransition = useCallback((targetEra: ExpansionEra, step: string) => {
     setState(prev => {
-      if (!isExpansionEra(targetEra) || !step.trim()) return prev;
+      if (prev.isAscending || !isExpansionEra(targetEra) || !step.trim()) return prev;
       if (prev.expansionProgress.transition || prev.expansionProgress.era === targetEra) return prev;
       if (targetEra === 'ai_pilot' && (prev.expansionProgress.era !== 'analyst' ||
           step !== 'automation_recognized' || !isAIPilotEligible(prev))) return prev;
@@ -583,10 +583,10 @@ export const useGameEngine = () => {
 
   const eligibleForPilot = isAIPilotEligible(state);
   useEffect(() => {
-    if (state.expansionProgress.era === 'analyst' && !state.expansionProgress.transition && eligibleForPilot) {
+    if (!state.isAscending && state.expansionProgress.era === 'analyst' && !state.expansionProgress.transition && eligibleForPilot) {
       beginExpansionTransition('ai_pilot', 'automation_recognized');
     }
-  }, [eligibleForPilot, state.expansionProgress, beginExpansionTransition]);
+  }, [eligibleForPilot, state.expansionProgress, state.isAscending, beginExpansionTransition]);
 
   const pendingPilot = state.expansionProgress.transition;
   const pilotStep = pendingPilot?.targetEra === 'ai_pilot'
@@ -966,6 +966,7 @@ export const useGameEngine = () => {
 
   const purchaseUpgrade = (upgrade: Upgrade) => {
     setState(prev => {
+      if (upgrade.id === 'project_omniscience' && isAscensionDeferred(prev)) return prev;
       if (prev.blockingTask) return prev;
       if (prev.upgrades[upgrade.id]) return prev; 
       const costAmount = upgrade.cost.amount;
@@ -1100,6 +1101,8 @@ export const useGameEngine = () => {
   };
 
   const ascend = () => {
+      // Preserve an already-open ending, including older mixed ending/expansion saves.
+      if (isAscensionDeferred(stateRef.current) && !stateRef.current.isAscending) return;
       // Step 1: Trigger Reboot UI
       setIsRebooting(true);
 

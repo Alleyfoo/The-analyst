@@ -3,6 +3,10 @@ import { GameState, Upgrade, UpgradeCategory, ResourceType, GameEvent, ChatScena
 export const TICK_RATE_MS = 200; // 5 ticks per second
 export const HISTORY_LENGTH = 50;
 
+// Gameplay ending availability comes only from persisted expansion authority.
+export const isAscensionDeferred = (state: GameState): boolean =>
+    state.expansionProgress.era !== 'analyst' || state.expansionProgress.transition !== null;
+
 // Purchased processing, query and storage automation; no score-only handoff.
 export const isAIPilotEligible = (state: GameState): boolean =>
     state.upgrades['pandas_scripts'] === true &&
