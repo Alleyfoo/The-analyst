@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, Play, X, Database } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,6 +7,9 @@ interface Props {
   active: boolean;
   onClose: () => void;
   onComplete: (reward: number, puBonus: number) => void;
+  pilotAvailable: boolean;
+  onBeginPilot: () => number | null;
+  onPilotComplete: (attemptId: number) => void;
 }
 
 // Simple puzzle logic
@@ -28,35 +31,74 @@ const FRAGMENTS = [
     "Code=500", "Active=FALSE", "Active=TRUE", "Code=404"
 ];
 
-export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete }) => {
+export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete, pilotAvailable, onBeginPilot, onPilotComplete }) => {
     const [requestIndex, setRequestIndex] = useState(0);
     const [query, setQuery] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState(false);
+    const [pilotStatus, setPilotStatus] = useState<'idle' | 'preparing' | 'ready'>('idle');
+    const pilotAvailableAtOpen = useRef(false);
+    const pilotAttemptId = useRef<number | null>(null);
+    const pilotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const pilotExecutionScheduled = useRef(false);
 
     useEffect(() => {
+        pilotAvailableAtOpen.current = active && pilotAvailable;
+        pilotAttemptId.current = null;
+        pilotExecutionScheduled.current = false;
+        setPilotStatus('idle');
         if (active) {
             setQuery([]);
             setError(null);
             setSuccess(false);
             setRequestIndex(Math.floor(Math.random() * REQUESTS.length));
         }
+        // Only new pilot work is cancellable; ordinary completion timing is preserved.
+        return () => {
+            if (pilotTimer.current !== null) clearTimeout(pilotTimer.current);
+            pilotTimer.current = null;
+            pilotAttemptId.current = null;
+        };
     }, [active]);
 
+    const handlePilot = () => {
+        if (!pilotAvailableAtOpen.current || !pilotAvailable || success || pilotTimer.current !== null) return;
+        const attemptId = onBeginPilot();
+        if (attemptId === null) return;
+        pilotAttemptId.current = attemptId;
+        setPilotStatus('preparing');
+        setError(null);
+        pilotTimer.current = setTimeout(() => {
+            pilotTimer.current = null;
+            if (pilotAttemptId.current !== attemptId) return;
+            setQuery([...REQUESTS[requestIndex].required]);
+            setPilotStatus('ready');
+        }, 700);
+    };
+
+    const handleClose = () => {
+        if (pilotAttemptId.current !== null) {
+            if (pilotTimer.current !== null) clearTimeout(pilotTimer.current);
+            pilotTimer.current = null;
+            pilotAttemptId.current = null;
+        }
+        onClose();
+    };
+
     const handleFragmentClick = (frag: string) => {
-        if (success) return;
+        if (success || pilotStatus === 'preparing') return;
         setQuery([...query, frag]);
         setError(null);
     };
 
     const handleBackspace = () => {
-        if (success) return;
+        if (success || pilotStatus === 'preparing') return;
         setQuery(query.slice(0, -1));
         setError(null);
     };
 
     const handleExecute = () => {
-        if (success) return;
+        if (success || pilotStatus === 'preparing' || pilotExecutionScheduled.current) return;
         
         const target = REQUESTS[requestIndex];
         
@@ -69,6 +111,17 @@ export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete }) 
 
         if (currentString === targetString) {
             setSuccess(true);
+            const attemptId = pilotAttemptId.current;
+            if (attemptId !== null) {
+                pilotExecutionScheduled.current = true;
+                pilotTimer.current = setTimeout(() => {
+                    pilotTimer.current = null;
+                    if (pilotAttemptId.current !== attemptId) return;
+                    onPilotComplete(attemptId);
+                    onClose();
+                }, 1500);
+                return;
+            }
             setTimeout(() => {
                 onComplete(100, 250); // 100 Clean Data, 250 PU
                 onClose();
@@ -113,7 +166,7 @@ export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete }) 
                              <Database size={16} className="text-blue-400" />
                              <span className="text-slate-200 font-bold text-sm">SQL_EDITOR_PRO.exe</span>
                          </div>
-                         <button onClick={onClose}><X size={18} className="text-slate-500 hover:text-white" /></button>
+                         <button onClick={handleClose} aria-label="Close SQL query"><X size={18} className="text-slate-500 hover:text-white" /></button>
                     </div>
 
                     <div className="p-6 bg-slate-900/50 flex-1 flex flex-col gap-6">
@@ -156,10 +209,19 @@ export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete }) 
                         </div>
 
                         {/* Controls */}
+                        {pilotAvailableAtOpen.current && pilotAvailable && (
+                            <div className="text-xs text-blue-300">
+                                <button onClick={handlePilot} disabled={success || pilotStatus === 'preparing'}
+                                    className="px-3 py-2 rounded border border-blue-500/50 bg-blue-900/30 hover:bg-blue-900/50 disabled:opacity-50">
+                                    {pilotStatus === 'preparing' ? 'PREPARING QUERY...' : 'USE AI PILOT'}
+                                </button>
+                                {pilotStatus === 'ready' && <p role="status" className="mt-2">AI DRAFT READY — REVIEW BEFORE EXECUTION</p>}
+                            </div>
+                        )}
                         <div className="flex gap-2">
                             <button 
                                 onClick={handleExecute}
-                                disabled={success}
+                                disabled={success || pilotStatus === 'preparing'}
                                 className={clsx("flex-1 py-3 rounded font-bold flex items-center justify-center gap-2 transition-all", 
                                     success ? "bg-emerald-600 text-white cursor-default" : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20")}
                             >
@@ -167,7 +229,7 @@ export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete }) 
                             </button>
                             <button 
                                 onClick={handleBackspace}
-                                disabled={query.length === 0 || success}
+                                disabled={query.length === 0 || success || pilotStatus === 'preparing'}
                                 className="px-6 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded font-bold"
                             >
                                 ⌫
@@ -182,7 +244,7 @@ export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete }) 
                                     <button
                                         key={i}
                                         onClick={() => handleFragmentClick(frag)}
-                                        disabled={success}
+                                        disabled={success || pilotStatus === 'preparing'}
                                         className={clsx("px-3 py-1.5 rounded text-xs font-mono border transition-all active:scale-95", 
                                             ["SELECT", "FROM", "WHERE", "AND", "OR", "DELETE"].includes(frag) ? "bg-purple-900/30 border-purple-500/50 text-purple-300 hover:bg-purple-900/50" : 
                                             frag.includes("'") ? "bg-green-900/30 border-green-500/50 text-green-300 hover:bg-green-900/50" :

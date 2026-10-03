@@ -141,14 +141,17 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
       {/* Tabs */}
       {pilotIntroduction.step && (
         <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
-          {pilotIntroduction.step === 'pilot_ready' ? <>
+          {pilotIntroduction.step === 'demand_pending' ? <>
+            <p className="font-bold text-emerald-400">Pilot result acknowledged</p>
+            <p className="mt-1">Operations is preparing the next round of work. Current workload is unchanged.</p>
+          </> : pilotIntroduction.step === 'pilot_ready' ? <>
             <p className="font-bold text-emerald-400">AI pilot approved</p>
-            <p className="mt-1">Next: try it on a real task when the trial becomes available. Current tools are unchanged.</p>
+            <p className="mt-1">Open Run Ad-Hoc SQL Query, use the pilot to prepare a query, then review and EXECUTE it.</p>
           </> : <>
             <p className="font-bold text-emerald-400">Management update available</p>
             <button onClick={onReviewPilot} disabled={!pilotIntroduction.available}
               className="mt-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed">
-              {pilotIntroduction.step === 'automation_recognized' ? 'Review automation progress' : 'Review AI pilot'}
+              {pilotIntroduction.step === 'automation_recognized' ? 'Review automation progress' : pilotIntroduction.step === 'pilot_success' ? 'Review pilot result' : 'Review AI pilot'}
             </button>
             {!pilotIntroduction.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
           </>}

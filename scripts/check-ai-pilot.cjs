@@ -1,4 +1,4 @@
-// Focused S1 checks using installed TypeScript, Node assertions and stubbed React/timers.
+// Focused S1/S2 checks using installed TypeScript, Node assertions and stubbed React/timers.
 // Browser smoke separately verifies actual rendering and persistence.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -67,7 +67,7 @@ function mount(seed = null, original = false) {
   return {
     state: () => JSON.parse(JSON.stringify(slots[0])),
     presentation: () => api.pilotIntroduction,
-    action(name, ...args) { api.actions[name](...args); flush(); },
+    action(name, ...args) { const result = api.actions[name](...args); flush(); return result; },
     purchase(id) { api.actions.purchaseUpgrade(load('constants.ts').UPGRADES.find(upgrade => upgrade.id === id)); flush(); },
     tick() { [...intervals.values()].find(i => i.ms === 200).fn(); flush(); },
     save() { [...intervals.values()].find(i => i.ms === 2000).fn(); return JSON.parse(saved); },
@@ -97,7 +97,7 @@ const highLegacy = mount({ pu: 1e12, tu: 1e9, prestige: { level: 999 } });
 assert.deepEqual(highLegacy.state().expansionProgress, { era: 'analyst', transition: null });
 const eligibleSeed = { ...below, upgrades: purchases };
 compareTicks(eligibleSeed); // During introduction, the original economy still evolves identically.
-for (const step of ['automation_recognized', 'pilot_announced', 'pilot_ready']) {
+for (const step of ['automation_recognized', 'pilot_announced', 'pilot_ready', 'pilot_success', 'demand_pending']) {
   const game = mount({ ...eligibleSeed, expansionProgress: progress(step), unknownField: 42 });
   for (let tick = 0; tick < 20; tick++) game.tick();
   assert.deepEqual(game.state().expansionProgress, progress(step));
@@ -138,4 +138,81 @@ assert.deepEqual(ending.state().expansionProgress, progress('automation_recogniz
 ending.action('cancelAscension');
 assert.equal(ending.presentation().available, true);
 assert.deepEqual(ending.state().expansionProgress, progress('automation_recognized'));
-console.log('PASS: eligibility, legacy scores, each step save/reload, idempotence, acknowledgement guards, blockers; exact baseline fresh/below/eligible production comparison over 20 ticks. Hooks/timers are stubbed.');
+for (const level of [0, 3]) for (const meeting of [false, true]) {
+  const seed = { ...eligibleSeed, sqlMode: true, expansionProgress: progress('pilot_ready'), prestige: { level },
+    boardMeeting: { active: meeting, target: 100000, progress: 5, timeRemaining: 120 } };
+  const manual = mount(seed), assisted = mount(seed), originalSQL = mount(seed, true);
+  const initial = assisted.state();
+  assisted.action('completeSQLPilotQuery', 123); // Claiming success without an issued attempt is insufficient.
+  assisted.action('completeSQLPilotQuery', undefined);
+  assert.deepEqual(assisted.state(), initial);
+  const attempt = assisted.action('beginSQLPilotAttempt');
+  assert.equal(typeof attempt, 'number');
+  assert.deepEqual(assisted.state(), initial, 'preparation grants no reward/progression');
+  manual.action('completeSQLQuery', 100, 250);
+  originalSQL.action('completeSQLQuery', 100, 250);
+  const currentManual = manual.state(), baselineManual = originalSQL.state();
+  delete currentManual.expansionProgress; delete baselineManual.expansionProgress;
+  assert.deepEqual(currentManual, baselineManual, 'ordinary SQL reward matches original source baseline');
+  assert.deepEqual(manual.state().expansionProgress, progress('pilot_ready'), 'manual cannot advance pilot');
+  assisted.action('completeSQLPilotQuery', attempt);
+  assert.deepEqual(assisted.state().expansionProgress, progress('pilot_success'));
+  const actual = assisted.state(), expected = manual.state();
+  delete actual.expansionProgress; delete expected.expansionProgress;
+  assert.deepEqual(actual, expected, 'manual/assisted rewards and meeting contributions are identical');
+  assert.equal(actual.cleanData - initial.cleanData, 100 * (1 + level * 0.1));
+  assert.equal(actual.pu - initial.pu, 250 * (1 + level * 0.1));
+  assert.equal(actual.boardMeeting.progress - initial.boardMeeting.progress, meeting ? 250 * (1 + level * 0.1) : 0);
+  const completed = assisted.state();
+  assisted.action('completeSQLPilotQuery', attempt);
+  assert.deepEqual(assisted.state(), completed, 'duplicate completion does not reward twice');
+}
+const readySeed = { ...eligibleSeed, sqlMode: true, expansionProgress: progress('pilot_ready') };
+const closed = mount(readySeed), staleAttempt = closed.action('beginSQLPilotAttempt');
+closed.action('toggleSQLMode');
+closed.action('toggleSQLMode');
+const reopened = closed.state();
+closed.action('completeSQLPilotQuery', staleAttempt);
+assert.deepEqual(closed.state(), reopened, 'closed task attempt cannot complete after reopening');
+assert.notEqual(closed.action('beginSQLPilotAttempt'), staleAttempt);
+for (const interaction of ['blocking task', 'OMNISCIENCE']) {
+  const collisionSeed = { ...readySeed, tu: 110, activeChats: [{ id: 'pending', scenarioId: 'logo_size', timestamp: 123456789 }] };
+  const manual = mount(collisionSeed), assisted = mount(collisionSeed);
+  const attempt = assisted.action('beginSQLPilotAttempt');
+  for (const game of [manual, assisted]) {
+    if (interaction === 'blocking task') game.action('resolveChat', 'pending', 0);
+    else game.purchase('project_omniscience');
+  }
+  manual.action('completeSQLQuery', 100, 250);
+  assisted.action('completeSQLPilotQuery', attempt);
+  assert.deepEqual(assisted.state().expansionProgress, progress('pilot_success'));
+  const actual = assisted.state(), expected = manual.state();
+  delete actual.expansionProgress; delete expected.expansionProgress;
+  assert.deepEqual(actual, expected, 'already-executed completion follows original reward behavior during ' + interaction);
+  assert.equal(assisted.presentation().available, false, 'feedback deferred during ' + interaction);
+  if (interaction === 'OMNISCIENCE') {
+    assisted.action('cancelAscension');
+    assert.deepEqual(assisted.state().expansionProgress, progress('pilot_success'));
+  } else {
+    assisted.action('toggleSQLMode');
+    assert.equal(assisted.state().sqlMode, true, 'existing blocking-task close guard is preserved');
+  }
+}
+for (const step of ['automation_recognized', 'pilot_announced', 'pilot_success', 'demand_pending']) {
+  const other = mount({ ...readySeed, expansionProgress: progress(step) });
+  assert.equal(other.action('beginSQLPilotAttempt'), null);
+  const original = other.state(); other.action('completeSQLPilotQuery', 1);
+  assert.deepEqual(other.state(), original);
+}
+for (const block of [{ sqlMode: false }, { isAscending: true }, { blockingTask: { name: 'Busy' } }]) {
+  assert.equal(mount({ ...readySeed, ...block }).action('beginSQLPilotAttempt'), null);
+}
+const feedback = mount({ ...eligibleSeed, expansionProgress: progress('pilot_success') });
+const feedbackBefore = feedback.state();
+feedback.action('advancePilotIntroduction', 'pilot_success');
+assert.deepEqual(feedback.state().expansionProgress, progress('demand_pending'));
+const feedbackAfter = feedback.state(); delete feedbackBefore.expansionProgress; delete feedbackAfter.expansionProgress;
+assert.deepEqual(feedbackAfter, feedbackBefore, 'management response adds no demand/rewards');
+assert.deepEqual(mount(feedback.save()).state().expansionProgress, progress('demand_pending'));
+compareTicks({ ...eligibleSeed, expansionProgress: progress('demand_pending') });
+console.log('PASS: S1 eligibility/steps/guards; S2 attempt authority, manual non-advancement, reward equivalence at two prestige levels with/without meetings, duplicate/stale guards, feedback/save recovery; exact baseline economy over 20 ticks. Hooks/timers are stubbed; browser smoke covers SQL interactions.');

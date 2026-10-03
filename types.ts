@@ -158,8 +158,9 @@ export const EXPANSION_ERAS = [
 
 export type ExpansionEra = typeof EXPANSION_ERAS[number];
 
-export const AI_PILOT_STEPS = ['automation_recognized', 'pilot_announced', 'pilot_ready'] as const;
+export const AI_PILOT_STEPS = ['automation_recognized', 'pilot_announced', 'pilot_ready', 'pilot_success', 'demand_pending'] as const;
 export type AIPilotStep = typeof AI_PILOT_STEPS[number];
+export type AIPilotFeedbackStep = Exclude<AIPilotStep, 'pilot_ready' | 'demand_pending'>;
 
 export interface ExpansionProgress {
   era: ExpansionEra;
@@ -170,7 +171,7 @@ export interface ExpansionProgress {
 }
 
 export interface GameState {
-  // Persisted progression authority; AI task behavior is not implemented yet.
+  // Persisted progression authority; S2 adds one assistive SQL trial.
   expansionProgress: ExpansionProgress;
 
   // Resources

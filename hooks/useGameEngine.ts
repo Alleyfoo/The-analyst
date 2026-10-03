@@ -13,6 +13,25 @@ const SAVE_KEY = 'the_analyst_save_v1';
 const isExpansionEra = (value: unknown): value is ExpansionEra =>
     EXPANSION_ERAS.some(era => era === value);
 
+const isSQLPilotReady = (state: GameState) =>
+    state.expansionProgress.era === 'automation' &&
+    state.expansionProgress.transition?.targetEra === 'ai_pilot' &&
+    state.expansionProgress.transition.step === 'pilot_ready';
+
+// Shared reward calculation keeps the assistive trial economically identical to manual SQL.
+const sqlQueryReward = (prev: GameState, reward: number, puBonus: number): GameState => {
+    let bm = prev.boardMeeting;
+    const mult = (1 + prev.prestige.level * 0.1);
+    if (bm.active) bm = { ...bm, progress: bm.progress + (puBonus * mult) };
+    return {
+        ...prev,
+        cleanData: prev.cleanData + (reward * mult),
+        pu: prev.pu + (puBonus * mult),
+        logs: [...prev.logs, { id: Date.now(), text: `Query Success. ${reward} Clean Data.`, type: 'success', timestamp: Date.now() }],
+        boardMeeting: bm
+    };
+};
+
 const hydrateState = (parsed: any): GameState => {
     const savedProgress = parsed.expansionProgress;
     const savedTransition = savedProgress?.transition;
@@ -83,6 +102,12 @@ export const useGameEngine = () => {
   
   const [isRebooting, setIsRebooting] = useState(false); // Local UI state for reboot sequence
   const stateRef = useRef(state);
+  const sqlPilotAttempt = useRef<number | null>(null);
+  const sqlPilotAttemptSequence = useRef(0);
+
+  useEffect(() => {
+    if (!state.sqlMode) sqlPilotAttempt.current = null;
+  }, [state.sqlMode]);
 
   useEffect(() => {
     stateRef.current = state;
@@ -527,7 +552,7 @@ export const useGameEngine = () => {
   const establishExpansionEra = (targetEra: ExpansionEra) => {
     setState(prev => {
       if (!isExpansionEra(targetEra)) return prev;
-      // S1 introduces the pilot only. Actual use/establishment belongs to later work.
+      // Introduction/use is not establishment: demand and consequence still belong to later work.
       if (targetEra === 'ai_pilot') return prev;
       if (prev.expansionProgress.transition?.targetEra !== targetEra) return prev;
       return {
@@ -559,14 +584,15 @@ export const useGameEngine = () => {
       const transition = prev.expansionProgress.transition;
       if (!canPresentPilotIntroduction(prev) || transition?.targetEra !== 'ai_pilot' ||
           transition.step !== expectedStep) return prev;
-      if (expectedStep !== 'automation_recognized' && expectedStep !== 'pilot_announced') return prev;
+      if (expectedStep !== 'automation_recognized' && expectedStep !== 'pilot_announced' && expectedStep !== 'pilot_success') return prev;
       if (prev.expansionProgress.era !== 'analyst' && prev.expansionProgress.era !== 'automation') return prev;
+      if (expectedStep === 'pilot_success' && prev.expansionProgress.era !== 'automation') return prev;
       return {
         ...prev,
         expansionProgress: {
           ...prev.expansionProgress,
           era: 'automation',
-          transition: { ...transition, step: expectedStep === 'automation_recognized' ? 'pilot_announced' : 'pilot_ready' },
+          transition: { ...transition, step: expectedStep === 'automation_recognized' ? 'pilot_announced' : expectedStep === 'pilot_announced' ? 'pilot_ready' : 'demand_pending' },
         },
       };
     });
@@ -661,17 +687,28 @@ export const useGameEngine = () => {
   };
 
   const completeSQLQuery = (reward: number, puBonus: number) => {
+      setState(prev => sqlQueryReward(prev, reward, puBonus));
+  };
+
+  const beginSQLPilotAttempt = () => {
+      const current = stateRef.current;
+      if (!isSQLPilotReady(current) || !current.sqlMode || current.blockingTask || current.isAscending || isRebooting) return null;
+      if (sqlPilotAttempt.current !== null) return sqlPilotAttempt.current;
+      sqlPilotAttempt.current = ++sqlPilotAttemptSequence.current;
+      return sqlPilotAttempt.current;
+  };
+
+  const completeSQLPilotQuery = (attemptId: number) => {
       setState(prev => {
-          let bm = prev.boardMeeting;
-          const mult = (1 + prev.prestige.level * 0.1);
-          if (bm.active) bm = { ...bm, progress: bm.progress + (puBonus * mult) };
+          if (!isSQLPilotReady(prev) || !prev.sqlMode || typeof attemptId !== 'number' ||
+              sqlPilotAttempt.current !== attemptId) return prev;
           return {
-              ...prev,
-              cleanData: prev.cleanData + (reward * mult),
-              pu: prev.pu + (puBonus * mult),
-              logs: [...prev.logs, { id: Date.now(), text: `Query Success. ${reward} Clean Data.`, type: 'success', timestamp: Date.now() }],
-              boardMeeting: bm
-          }
+              ...sqlQueryReward(prev, 100, 250),
+              expansionProgress: {
+                  ...prev.expansionProgress,
+                  transition: { ...prev.expansionProgress.transition!, step: 'pilot_success' },
+              },
+          };
       });
   };
 
@@ -1069,8 +1106,10 @@ export const useGameEngine = () => {
     state,
     isRebooting,
     pilotIntroduction: { step: pilotStep, available: canPresentPilotIntroduction(state) },
+    sqlPilotAvailable: isSQLPilotReady(state),
     actions: {
       beginExpansionTransition, establishExpansionEra, advancePilotIntroduction,
+      beginSQLPilotAttempt, completeSQLPilotQuery,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

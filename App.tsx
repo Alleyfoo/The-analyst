@@ -24,10 +24,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable } = useGameEngine();
   const [pilotOpen, setPilotOpen] = useState(false);
   useEffect(() => {
-    if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready') setPilotOpen(false);
+    if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready' || pilotIntroduction.step === 'demand_pending') setPilotOpen(false);
   }, [pilotIntroduction.available, pilotIntroduction.step]);
 
   // Get first active event if any
@@ -111,6 +111,9 @@ const App: React.FC = () => {
         active={state.sqlMode}
         onClose={actions.toggleSQLMode}
         onComplete={actions.completeSQLQuery}
+        pilotAvailable={sqlPilotAvailable}
+        onBeginPilot={actions.beginSQLPilotAttempt}
+        onPilotComplete={actions.completeSQLPilotQuery}
       />
 
       <ModelTrainingGame 
@@ -156,7 +159,7 @@ const App: React.FC = () => {
 
       {/* Event Overlay */}
       <EventModal event={activeEvent} onDismiss={actions.dismissEvent} />
-      {pilotOpen && pilotIntroduction.available && pilotIntroduction.step && pilotIntroduction.step !== 'pilot_ready' && (
+      {pilotOpen && pilotIntroduction.available && pilotIntroduction.step && pilotIntroduction.step !== 'pilot_ready' && pilotIntroduction.step !== 'demand_pending' && (
         <AIPilotIntroduction
           step={pilotIntroduction.step}
           onContinue={actions.advancePilotIntroduction}
