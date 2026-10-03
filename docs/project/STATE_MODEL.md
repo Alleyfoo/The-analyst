@@ -2,8 +2,11 @@
 
 This inventory covers every `types.ts::GameState` field. Initial values come from `types.ts::INITIAL_STATE`; writes come from `hooks/useGameEngine.ts::useGameEngine` actions/update loop and `constants.ts` effects. All fields below are serialized to `the_analyst_save_v1`, even derived values. Persistence does not imply validation or an invariant enforced on every write.
 
+S0 adds implemented, inert expansion progression infrastructure to the original source baseline. This is not active tier gameplay and does not change original resource/update rules. The design authority remains [AI_EXPANSION.md](../design/AI_EXPANSION.md), whose baseline evidence describes the pre-S0 snapshot.
+
 | Purpose | Fields and initial values | Meaning / writers |
 | --- | --- | --- |
+| Expansion progression (S0) | `expansionProgress={era:'analyst',transition:null}` | Persisted `ExpansionProgress`: `era: ExpansionEra`; `transition: null \| {targetEra: ExpansionEra, step: string}`. No gameplay/UI consumer or score-based advancement. Engine-only transition actions are available for future callers. |
 | Resources | `rawData=100`, `maxStorage=500`, `cleanData=0`, `metrics=0`, `dashboards=0`, `models=0` | Raw buffer/capacity, processed buffer, accumulated metrics and installed output counts. Production, manual/minigame actions, upgrades, chat/events and coffee alter them. Only raw has a real capacity. |
 | Scores and quality | `pu=0`, `tu=10`, `metricQuality=0.5` | Perceived/true understanding and TU production quality factor. PU/TU are both progression inputs and spendable resources. Quality is mutable, not recomputed; not universally clamped to 0..1. |
 | Base rates | `rawDataRate=2`, `cleanDataRate=0`, `metricRate=0` | Stored per-second base throughput, changed by upgrades. They exclude marketing, prestige and temporary meeting penalties; not derived from purchase records on load. |
@@ -33,4 +36,16 @@ Transient unsaved values include `stateRef`, hook-local `isRebooting`, Workstati
 
 ## localStorage boundary
 
-The sole localStorage key and all read/write/remove sites are in `hooks/useGameEngine.ts`: initializer read, two-second autosave write, `ascend` immediate write and `hardReset` removal. No source writes API configuration or independent component settings to localStorage. Hydration preserves unknown top-level JSON fields by spreading `parsed`; it only restores selected nested defaults/functions and does not validate numeric ranges. No explicit act, era, chapter, campaign progression, save version field or completed-run history exists.
+The sole localStorage key and all read/write/remove sites are in `hooks/useGameEngine.ts`: initializer read, two-second autosave write, `ascend` immediate write and `hardReset` removal. No source writes API configuration or independent component settings to localStorage. Hydration preserves unknown top-level JSON fields by spreading `parsed`; it restores selected nested defaults/functions and does not validate existing numeric ranges. S0 adds the era/transition object below; there is still no active narrative campaign, save version field or completed-run history.
+
+## Expansion progression authority (S0)
+
+`types.ts::EXPANSION_ERAS` defines `analyst`, `automation`, `ai_pilot`, `acceleration`, `connected_enterprise`, `good_enough`, `lightspeed`, and `governance_crisis`; `ExpansionEra` derives its union from that list. `ExpansionProgress` contains only `era` and `transition`. No counters, thresholds, Velocity, demand, verification, permissions or provenance fields were introduced.
+
+`hydrateState` merges default progression with saved fields. A missing or unsupported era defaults to `analyst`, regardless of PU/TU, prestige, upgrades or tick. Missing/null transition defaults to null; incomplete/invalid transitions are discarded unless they contain a known `targetEra` and string `step`. Valid transition objects and unknown saved progression fields are preserved. This validation is confined to the new object; it is not a general migration framework and does not repair existing hydration quirks.
+
+`useGameEngine::beginExpansionTransition(targetEra, step)` starts a pending transition only if the target is known, differs from the current era, the step is nonblank and no transition is already pending. `establishExpansionEra(targetEra)` requires a matching pending target, then commits that era and clears the transition. These actions change only progression, do not implement narrative completion checks or a tier-order policy, and are not called by baseline gameplay or passed to UI components. Future gameplay must use this explicit engine boundary instead of independently inferring eras.
+
+The existing whole-state autosave serializes progression without changing the save key. Existing ascension/factory-reset functions were untouched; reconstruction from INITIAL_STATE naturally returns progression to analyst/null. There is no new reset gate or prestige preservation rule for expansion.
+
+S0 validation: npm ci/build/lint passed. Isolated browser smoke passed fresh autosave/reload, ordinary and high-score legacy saves, partial objects, valid future transitions, invalid-era fallback and unknown-field preservation. A temporary deterministic hook/timer harness compared original baseline fresh state plus 20 ticks and found exact equality excluding only progression; it also checked guarded actions. This is limited validation, not an exhaustive gameplay regression suite.

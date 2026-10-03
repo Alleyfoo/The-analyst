@@ -145,7 +145,31 @@ export interface CoffeeBreakState {
     effectDescription: string;
 }
 
+export const EXPANSION_ERAS = [
+  'analyst',
+  'automation',
+  'ai_pilot',
+  'acceleration',
+  'connected_enterprise',
+  'good_enough',
+  'lightspeed',
+  'governance_crisis',
+] as const;
+
+export type ExpansionEra = typeof EXPANSION_ERAS[number];
+
+export interface ExpansionProgress {
+  era: ExpansionEra;
+  transition: null | {
+    targetEra: ExpansionEra;
+    step: string;
+  };
+}
+
 export interface GameState {
+  // Persisted progression authority; no active expansion gameplay yet.
+  expansionProgress: ExpansionProgress;
+
   // Resources
   rawData: number;
   maxStorage: number; // New: storage cap
@@ -214,6 +238,7 @@ export interface GameState {
 }
 
 export const INITIAL_STATE: GameState = {
+  expansionProgress: { era: 'analyst', transition: null },
   rawData: 100, 
   maxStorage: 500, // Initial cap
   cleanData: 0,

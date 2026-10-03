@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType } from '../types';
+import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra } from '../types';
 import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT } from '../constants';
 
 // Board Meeting Settings
@@ -10,11 +10,24 @@ const COFFEE_COOLDOWN_TICKS = 600; // 2 minutes
 
 const SAVE_KEY = 'the_analyst_save_v1';
 
+const isExpansionEra = (value: unknown): value is ExpansionEra =>
+    EXPANSION_ERAS.some(era => era === value);
+
 const hydrateState = (parsed: any): GameState => {
+    const savedProgress = parsed.expansionProgress;
+    const savedTransition = savedProgress?.transition;
     // Merge basic fields to ensure new properties from updates exist
     const state: GameState = {
         ...INITIAL_STATE,
         ...parsed,
+        expansionProgress: {
+            ...INITIAL_STATE.expansionProgress,
+            ...(savedProgress || {}),
+            era: isExpansionEra(savedProgress?.era) ? savedProgress.era : INITIAL_STATE.expansionProgress.era,
+            transition: isExpansionEra(savedTransition?.targetEra) && typeof savedTransition?.step === 'string'
+                ? { ...savedTransition }
+                : null,
+        },
         // Deep merge nested objects where necessary to preserve defaults for new fields
         worldStats: { ...INITIAL_STATE.worldStats, ...(parsed.worldStats || {}) },
         market: { ...INITIAL_STATE.market, ...(parsed.market || {}) },
@@ -497,6 +510,30 @@ export const useGameEngine = () => {
   }, [isRebooting]);
 
   // Actions
+  // Future progression callers must begin a transition before establishing its era.
+  // No baseline gameplay invokes these actions.
+  const beginExpansionTransition = (targetEra: ExpansionEra, step: string) => {
+    setState(prev => {
+      if (!isExpansionEra(targetEra) || !step.trim()) return prev;
+      if (prev.expansionProgress.transition || prev.expansionProgress.era === targetEra) return prev;
+      return {
+        ...prev,
+        expansionProgress: { ...prev.expansionProgress, transition: { targetEra, step } },
+      };
+    });
+  };
+
+  const establishExpansionEra = (targetEra: ExpansionEra) => {
+    setState(prev => {
+      if (!isExpansionEra(targetEra)) return prev;
+      if (prev.expansionProgress.transition?.targetEra !== targetEra) return prev;
+      return {
+        ...prev,
+        expansionProgress: { ...prev.expansionProgress, era: targetEra, transition: null },
+      };
+    });
+  };
+
   const manualClean = () => {
     setState(prev => {
       if (prev.blockingTask) return prev; // Blocked
@@ -994,6 +1031,7 @@ export const useGameEngine = () => {
     state,
     isRebooting,
     actions: {
+      beginExpansionTransition, establishExpansionEra,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,
