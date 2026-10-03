@@ -10,6 +10,8 @@ interface Props {
   pilotAvailable: boolean;
   onBeginPilot: () => number | null;
   onPilotComplete: (attemptId: number) => void;
+  queueAttemptId: number | null;
+  onQueueComplete: (attemptId: number) => void;
 }
 
 // Simple puzzle logic
@@ -31,7 +33,7 @@ const FRAGMENTS = [
     "Code=500", "Active=FALSE", "Active=TRUE", "Code=404"
 ];
 
-export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete, pilotAvailable, onBeginPilot, onPilotComplete }) => {
+export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete, pilotAvailable, onBeginPilot, onPilotComplete, queueAttemptId, onQueueComplete }) => {
     const [requestIndex, setRequestIndex] = useState(0);
     const [query, setQuery] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -39,25 +41,38 @@ export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete, pi
     const [pilotStatus, setPilotStatus] = useState<'idle' | 'preparing' | 'ready'>('idle');
     const pilotAvailableAtOpen = useRef(false);
     const pilotAttemptId = useRef<number | null>(null);
+    const queueAttemptAtOpen = useRef<number | null>(null);
     const pilotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pilotExecutionScheduled = useRef(false);
 
     useEffect(() => {
         pilotAvailableAtOpen.current = active && pilotAvailable;
         pilotAttemptId.current = null;
+        queueAttemptAtOpen.current = active ? queueAttemptId : null;
         pilotExecutionScheduled.current = false;
         setPilotStatus('idle');
         if (active) {
             setQuery([]);
             setError(null);
             setSuccess(false);
-            setRequestIndex(Math.floor(Math.random() * REQUESTS.length));
+            const index = Math.floor(Math.random() * REQUESTS.length);
+            setRequestIndex(index);
+            if (queueAttemptId !== null) {
+                setPilotStatus('preparing');
+                pilotTimer.current = setTimeout(() => {
+                    pilotTimer.current = null;
+                    if (queueAttemptAtOpen.current !== queueAttemptId) return;
+                    setQuery([...REQUESTS[index].required]);
+                    setPilotStatus('ready');
+                }, 700);
+            }
         }
         // Only new pilot work is cancellable; ordinary completion timing is preserved.
         return () => {
             if (pilotTimer.current !== null) clearTimeout(pilotTimer.current);
             pilotTimer.current = null;
             pilotAttemptId.current = null;
+            queueAttemptAtOpen.current = null;
         };
     }, [active]);
 
@@ -77,10 +92,11 @@ export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete, pi
     };
 
     const handleClose = () => {
-        if (pilotAttemptId.current !== null) {
+        if (pilotAttemptId.current !== null || queueAttemptAtOpen.current !== null) {
             if (pilotTimer.current !== null) clearTimeout(pilotTimer.current);
             pilotTimer.current = null;
             pilotAttemptId.current = null;
+            queueAttemptAtOpen.current = null;
         }
         onClose();
     };
@@ -111,6 +127,17 @@ export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete, pi
 
         if (currentString === targetString) {
             setSuccess(true);
+            const queueId = queueAttemptAtOpen.current;
+            if (queueId !== null) {
+                pilotExecutionScheduled.current = true;
+                pilotTimer.current = setTimeout(() => {
+                    pilotTimer.current = null;
+                    if (queueAttemptAtOpen.current !== queueId) return;
+                    onQueueComplete(queueId);
+                    onClose();
+                }, 1500);
+                return;
+            }
             const attemptId = pilotAttemptId.current;
             if (attemptId !== null) {
                 pilotExecutionScheduled.current = true;
@@ -215,9 +242,10 @@ export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete, pi
                                     className="px-3 py-2 rounded border border-blue-500/50 bg-blue-900/30 hover:bg-blue-900/50 disabled:opacity-50">
                                     {pilotStatus === 'preparing' ? 'PREPARING QUERY...' : 'USE AI PILOT'}
                                 </button>
-                                {pilotStatus === 'ready' && <p role="status" className="mt-2">AI DRAFT READY — REVIEW BEFORE EXECUTION</p>}
                             </div>
                         )}
+                        {queueAttemptAtOpen.current !== null && pilotStatus === 'preparing' && <p className="text-xs text-blue-300">PREPARING QUERY...</p>}
+                        {pilotStatus === 'ready' && <p role="status" className="mt-2 text-xs text-blue-300">AI DRAFT READY — REVIEW BEFORE EXECUTION</p>}
                         <div className="flex gap-2">
                             <button 
                                 onClick={handleExecute}

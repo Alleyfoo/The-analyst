@@ -18,6 +18,12 @@ const isSQLPilotReady = (state: GameState) =>
     state.expansionProgress.transition?.targetEra === 'ai_pilot' &&
     state.expansionProgress.transition.step === 'pilot_ready';
 
+const isAIReviewActive = (state: GameState) => state.aiReviewQueue.pending > 0 && (
+    (state.aiReviewQueue.wave === 1 && state.expansionProgress.era === 'automation' &&
+     state.expansionProgress.transition?.targetEra === 'ai_pilot' && state.expansionProgress.transition.step === 'rollout_review') ||
+    (state.aiReviewQueue.wave === 2 && state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition === null)
+);
+
 // Shared reward calculation keeps the assistive trial economically identical to manual SQL.
 const sqlQueryReward = (prev: GameState, reward: number, puBonus: number): GameState => {
     let bm = prev.boardMeeting;
@@ -39,6 +45,12 @@ const hydrateState = (parsed: any): GameState => {
     const state: GameState = {
         ...INITIAL_STATE,
         ...parsed,
+        aiReviewQueue: {
+            ...INITIAL_STATE.aiReviewQueue,
+            ...Object.fromEntries(['pending', 'completed', 'wave'].map(key => [key,
+                Number.isSafeInteger(parsed.aiReviewQueue?.[key]) && parsed.aiReviewQueue[key] >= 0
+                    ? parsed.aiReviewQueue[key] : 0])),
+        },
         expansionProgress: {
             ...INITIAL_STATE.expansionProgress,
             ...(savedProgress || {}),
@@ -104,10 +116,17 @@ export const useGameEngine = () => {
   const stateRef = useRef(state);
   const sqlPilotAttempt = useRef<number | null>(null);
   const sqlPilotAttemptSequence = useRef(0);
+  const [sqlQueueAttemptId, setSQLQueueAttemptId] = useState<number | null>(null);
+  const sqlQueueAttempt = useRef<{ id: number; wave: number; completed: number } | null>(null);
+  const sqlQueueSequence = useRef(0);
 
   useEffect(() => {
-    if (!state.sqlMode) sqlPilotAttempt.current = null;
-  }, [state.sqlMode]);
+    if (!state.sqlMode) {
+      sqlPilotAttempt.current = null;
+      sqlQueueAttempt.current = null;
+      setSQLQueueAttemptId(null);
+    }
+  }, [state.sqlMode, sqlQueueAttemptId]);
 
   useEffect(() => {
     stateRef.current = state;
@@ -552,7 +571,7 @@ export const useGameEngine = () => {
   const establishExpansionEra = (targetEra: ExpansionEra) => {
     setState(prev => {
       if (!isExpansionEra(targetEra)) return prev;
-      // Introduction/use is not establishment: demand and consequence still belong to later work.
+      // AI establishment belongs exclusively to the acknowledged first-queue result below.
       if (targetEra === 'ai_pilot') return prev;
       if (prev.expansionProgress.transition?.targetEra !== targetEra) return prev;
       return {
@@ -584,6 +603,15 @@ export const useGameEngine = () => {
       const transition = prev.expansionProgress.transition;
       if (!canPresentPilotIntroduction(prev) || transition?.targetEra !== 'ai_pilot' ||
           transition.step !== expectedStep) return prev;
+      if (expectedStep === 'demand_pending' && prev.expansionProgress.era === 'automation' && prev.aiReviewQueue.wave === 0) {
+        return { ...prev, aiReviewQueue: { pending: 3, completed: 0, wave: 1 },
+          expansionProgress: { ...prev.expansionProgress, transition: { ...transition, step: 'rollout_review' } } };
+      }
+      if (expectedStep === 'rollout_success' && prev.expansionProgress.era === 'automation' &&
+          prev.aiReviewQueue.wave === 1 && prev.aiReviewQueue.pending === 0 && prev.aiReviewQueue.completed === 3) {
+        return { ...prev, aiReviewQueue: { pending: 6, completed: 0, wave: 2 },
+          expansionProgress: { ...prev.expansionProgress, era: 'ai_pilot', transition: null } };
+      }
       if (expectedStep !== 'automation_recognized' && expectedStep !== 'pilot_announced' && expectedStep !== 'pilot_success') return prev;
       if (prev.expansionProgress.era !== 'analyst' && prev.expansionProgress.era !== 'automation') return prev;
       if (expectedStep === 'pilot_success' && prev.expansionProgress.era !== 'automation') return prev;
@@ -688,6 +716,30 @@ export const useGameEngine = () => {
 
   const completeSQLQuery = (reward: number, puBonus: number) => {
       setState(prev => sqlQueryReward(prev, reward, puBonus));
+  };
+
+  const openNextAIReview = () => {
+      const current = stateRef.current;
+      if (!isAIReviewActive(current) || !canPresentPilotIntroduction(current) || sqlQueueAttempt.current) return;
+      const id = ++sqlQueueSequence.current;
+      sqlQueueAttempt.current = { id, wave: current.aiReviewQueue.wave, completed: current.aiReviewQueue.completed };
+      setSQLQueueAttemptId(id);
+      setState(prev => isAIReviewActive(prev) && canPresentPilotIntroduction(prev) &&
+          prev.aiReviewQueue.wave === current.aiReviewQueue.wave &&
+          prev.aiReviewQueue.completed === current.aiReviewQueue.completed ? { ...prev, sqlMode: true } : prev);
+  };
+
+  const completeAIReviewQuery = (attemptId: number) => {
+      setState(prev => {
+          const attempt = sqlQueueAttempt.current;
+          if (!isAIReviewActive(prev) || !prev.sqlMode || !attempt || attempt.id !== attemptId ||
+              attempt.wave !== prev.aiReviewQueue.wave || attempt.completed !== prev.aiReviewQueue.completed) return prev;
+          const queue = { ...prev.aiReviewQueue, pending: prev.aiReviewQueue.pending - 1, completed: prev.aiReviewQueue.completed + 1 };
+          return { ...sqlQueryReward(prev, 100, 250), aiReviewQueue: queue,
+              expansionProgress: queue.wave === 1 && queue.pending === 0
+                  ? { ...prev.expansionProgress, transition: { targetEra: 'ai_pilot', step: 'rollout_success' } }
+                  : prev.expansionProgress };
+      });
   };
 
   const beginSQLPilotAttempt = () => {
@@ -1107,9 +1159,12 @@ export const useGameEngine = () => {
     isRebooting,
     pilotIntroduction: { step: pilotStep, available: canPresentPilotIntroduction(state) },
     sqlPilotAvailable: isSQLPilotReady(state),
+    sqlQueueAttemptId,
+    aiReviewAvailable: isAIReviewActive(state) && canPresentPilotIntroduction(state),
     actions: {
       beginExpansionTransition, establishExpansionEra, advancePilotIntroduction,
       beginSQLPilotAttempt, completeSQLPilotQuery,
+      openNextAIReview, completeAIReviewQuery,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

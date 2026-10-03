@@ -1,6 +1,6 @@
 # Existing extension boundaries
 
-This is a seam inventory for later second-act work, **not** an expansion design. Preserve baseline commit `1263845279e9afd65ac05a6a1ac809e9bc70ee3c` as the comparison point. S0 implements progression, S1 organisational introduction, and S2 one assistive SQL trial. No increased workload or outer wrapper exists.
+This is a seam inventory for later second-act work, **not** an expansion design. Preserve baseline commit `1263845279e9afd65ac05a6a1ac809e9bc70ee3c` as the comparison point. S0 implements progression, S1 organisational introduction, S2 one assistive SQL trial, and S3 a finite review queue. No outer wrapper exists.
 
 | Existing seam | What it permits examining later | Boundary to preserve |
 | --- | --- | --- |
@@ -16,7 +16,7 @@ This is a seam inventory for later second-act work, **not** an expansion design.
 
 Technically plausible, based on App's single composition root and the hook's action/state interface. This is an inference about a later change, not implemented functionality. A wrapper would need to define lifecycle/persistence ownership, what triggers transition, whether baseline simulation continues, and whether prestige is inside or outside the era. None of these questions has an existing answer in code.
 
-S0 selects a nested central persistence location for the small authority object, not an outer store or second engine. S1 adds purchase eligibility and two acknowledgements; S2 adds guarded assisted SQL completion and positive feedback. `beginExpansionTransition` refuses replacement; `establishExpansionEra` still refuses `ai_pilot` until later required experiences. No arbitrary state/era setter is exposed to UI. Demand/consequence and establishment remain later work.
+S0 selects a nested central persistence location for the small authority object, not an outer store or second engine. S1 adds purchase eligibility and two acknowledgements; S2 adds guarded assisted SQL completion and positive feedback. `beginExpansionTransition` refuses replacement; generic `establishExpansionEra` still refuses `ai_pilot`. S3 establishes it only through the acknowledged first-queue result. No arbitrary state/era setter is exposed to UI.
 
 Hydration preserves unknown save fields and restores missing defaults. Whole-state autosave remains the only mechanism. INITIAL_STATE naturally supplies analyst/null on existing reset reconstruction; no reset/ascension function was edited. S1 adds visible management updates, but no production formula, upgrade gate, minigame reward, meeting, chat, baseline event or market behavior changed.
 
@@ -26,7 +26,9 @@ S1 eligibility: `constants.ts::isAIPilotEligible` requires purchased Python ETL 
 
 S2 SQL entry is exactly `automation / ai_pilot / pilot_ready`. `SQLMiningGame` locally prepares an existing request in 700 ms, populating the original editor/preview; human EXECUTE remains the only success trigger. It reports an engine-issued transient attempt ID through the separate `completeSQLPilotQuery` callback. The engine validates ready progression/open SQL/ID and uses the same reward calculation as ordinary `completeSQLQuery`. Only assisted success advances `pilot_ready -> pilot_success`; explicit feedback acknowledgement advances `demand_pending`, still era automation/target ai_pilot. See [STATE_MODEL](STATE_MODEL.md) for rewards, cancellation and persistence. No general AI/workflow/provenance framework was introduced.
 
-The new pilot timers/attempts are discarded on close/reload; ordinary request generation, manual SQL behavior and baseline timeout quirks remain preserved. Meetings retain the original SQL PU contribution; management feedback waits for baseline blockers. Final S2 UI says Operations is preparing further work, but there are no new jobs, demand/rate formulas, batch actions or permissions. Later work may extend demand_pending only under a new work order.
+The new pilot timers/attempts are discarded on close/reload; ordinary request generation, manual SQL behavior and baseline timeout quirks remain preserved. Meetings retain the original SQL PU contribution; management feedback waits for baseline blockers.
+
+S3 extends `demand_pending` with an explicit PILOT EXPANSION acknowledgement and three finite SQL reviews. `GameState.aiReviewQueue` stores only pending/completed-per-wave/wave; it is not a general scheduler. `openNextAIReview` explicitly opens an existing random SQL request with automatic local preparation, preserving editable preview and human EXECUTE. `completeAIReviewQuery` owns issued-ID/wave/completed-snapshot guards and the shared reward; manual SQL stays separate. Clearing three exposes `rollout_success`; explicit result acknowledgement establishes `ai_pilot` and creates six reviews. No refill, Velocity, demand/rate formula, batch action or permissions exists. See [STATE_MODEL](STATE_MODEL.md) for save/retry boundaries. Later work must not reinterpret this count as throughput or direct AI execution authority.
 
 **Unresolved ending collision (source-confirmed, preserved):** OMNISCIENCE remains buyable during a pending introduction or pilot-ready state. Its unchanged effect opens ascension and freezes production; S1 then suppresses its dialog. Return to Sandbox can resume the saved introduction, while New Game+ reconstructs INITIAL_STATE and discards it. Factory reset also discards it. S1 imposes no ascension gate and does not fix the baseline ending re-entry quirk. A dedicated work order must reconcile this before later expansion consequences matter.
 

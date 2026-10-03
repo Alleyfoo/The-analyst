@@ -158,9 +158,9 @@ export const EXPANSION_ERAS = [
 
 export type ExpansionEra = typeof EXPANSION_ERAS[number];
 
-export const AI_PILOT_STEPS = ['automation_recognized', 'pilot_announced', 'pilot_ready', 'pilot_success', 'demand_pending'] as const;
+export const AI_PILOT_STEPS = ['automation_recognized', 'pilot_announced', 'pilot_ready', 'pilot_success', 'demand_pending', 'rollout_review', 'rollout_success'] as const;
 export type AIPilotStep = typeof AI_PILOT_STEPS[number];
-export type AIPilotFeedbackStep = Exclude<AIPilotStep, 'pilot_ready' | 'demand_pending'>;
+export type AIPilotFeedbackStep = Exclude<AIPilotStep, 'pilot_ready' | 'rollout_review'>;
 
 export interface ExpansionProgress {
   era: ExpansionEra;
@@ -171,8 +171,9 @@ export interface ExpansionProgress {
 }
 
 export interface GameState {
-  // Persisted progression authority; S2 adds one assistive SQL trial.
+  // Persisted progression authority and purpose-specific finite SQL workload.
   expansionProgress: ExpansionProgress;
+  aiReviewQueue: { pending: number; completed: number; wave: number };
 
   // Resources
   rawData: number;
@@ -243,6 +244,7 @@ export interface GameState {
 
 export const INITIAL_STATE: GameState = {
   expansionProgress: { era: 'analyst', transition: null },
+  aiReviewQueue: { pending: 0, completed: 0, wave: 0 },
   rawData: 100, 
   maxStorage: 500, // Initial cap
   cleanData: 0,

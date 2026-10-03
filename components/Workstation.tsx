@@ -25,6 +25,8 @@ interface Props {
   onTogglePDF: () => void;
   onVisitCoffee: () => void;
   pilotIntroduction: { step: AIPilotStep | null; available: boolean };
+  aiReviewAvailable: boolean;
+  onReviewNextQuery: () => void;
   onReviewPilot: () => void;
 }
 
@@ -59,7 +61,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery }) => {
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -141,20 +143,24 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
       {/* Tabs */}
       {pilotIntroduction.step && (
         <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
-          {pilotIntroduction.step === 'demand_pending' ? <>
-            <p className="font-bold text-emerald-400">Pilot result acknowledged</p>
-            <p className="mt-1">Operations is preparing the next round of work. Current workload is unchanged.</p>
-          </> : pilotIntroduction.step === 'pilot_ready' ? <>
+          {pilotIntroduction.step === 'rollout_review' ? <p className="font-bold text-emerald-400">Pilot review queue active</p> : pilotIntroduction.step === 'pilot_ready' ? <>
             <p className="font-bold text-emerald-400">AI pilot approved</p>
             <p className="mt-1">Open Run Ad-Hoc SQL Query, use the pilot to prepare a query, then review and EXECUTE it.</p>
           </> : <>
             <p className="font-bold text-emerald-400">Management update available</p>
             <button onClick={onReviewPilot} disabled={!pilotIntroduction.available}
               className="mt-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 disabled:cursor-not-allowed">
-              {pilotIntroduction.step === 'automation_recognized' ? 'Review automation progress' : pilotIntroduction.step === 'pilot_success' ? 'Review pilot result' : 'Review AI pilot'}
+              {pilotIntroduction.step === 'automation_recognized' ? 'Review automation progress' : pilotIntroduction.step === 'pilot_success' ? 'Review pilot result' : pilotIntroduction.step === 'demand_pending' ? 'Review pilot expansion' : pilotIntroduction.step === 'rollout_success' ? 'Review queue result' : 'Review AI pilot'}
             </button>
             {!pilotIntroduction.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
           </>}
+        </div>
+      )}
+      {state.aiReviewQueue.wave > 0 && (
+        <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
+          <p>AI SQL review queue — {state.aiReviewQueue.pending} pending · {state.aiReviewQueue.completed} completed · wave {state.aiReviewQueue.wave}</p>
+          {state.aiReviewQueue.pending > 0 && <button onClick={onReviewNextQuery} disabled={!aiReviewAvailable}
+            className="mt-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">REVIEW NEXT QUERY</button>}
         </div>
       )}
       <div className="flex border-b border-slate-800 bg-slate-900/50 shrink-0">
