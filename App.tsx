@@ -24,7 +24,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate } = useGameEngine();
   const [pilotOpen, setPilotOpen] = useState(false);
   useEffect(() => {
     if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready' || pilotIntroduction.step === 'rollout_review') setPilotOpen(false);
@@ -165,12 +165,17 @@ const App: React.FC = () => {
       {pilotOpen && pilotIntroduction.available && pilotIntroduction.step && pilotIntroduction.step !== 'pilot_ready' && pilotIntroduction.step !== 'rollout_review' && (
         <AIPilotIntroduction
           step={pilotIntroduction.step}
-          onContinue={step => { if (step !== 'continuous_demand_offer') actions.advancePilotIntroduction(step); }}
+          onContinue={step => { if (step !== 'continuous_demand_offer' && step !== 'pressure_visible' && step !== 'review_bottleneck_visible') actions.advancePilotIntroduction(step); }}
           onLater={() => setPilotOpen(false)}
         />
       )}
       {pilotOpen && operationalRollout.offered && operationalRollout.available && (
-        <AIPilotIntroduction step="continuous_demand_offer" onContinue={actions.acknowledgeOperationalRollout} onLater={() => setPilotOpen(false)} />
+        <AIPilotIntroduction step="continuous_demand_offer" onContinue={() => { actions.acknowledgeOperationalRollout(); setPilotOpen(false); }} onLater={() => setPilotOpen(false)} />
+      )}
+      {pilotOpen && accelerationUpdate.step && accelerationUpdate.available && (
+        <AIPilotIntroduction step={accelerationUpdate.step}
+          onContinue={step => { if (step === 'pressure_visible' || step === 'review_bottleneck_visible') { actions.acknowledgeAccelerationUpdate(step); setPilotOpen(false); } }}
+          onLater={() => setPilotOpen(false)} />
       )}
 
       {/* Top Bar */}
@@ -219,6 +224,7 @@ const App: React.FC = () => {
                 onReviewNextQuery={actions.openNextAIReview}
                 operationalRollout={operationalRollout}
                 aiReviewDemandActive={aiReviewDemandActive}
+                accelerationUpdate={accelerationUpdate}
             />
         </div>
 

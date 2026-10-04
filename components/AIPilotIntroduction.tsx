@@ -3,8 +3,8 @@ import { CheckCircle, Sparkles } from 'lucide-react';
 import { AIPilotStep, AIPilotFeedbackStep } from '../types';
 
 interface Props {
-  step: AIPilotFeedbackStep | 'continuous_demand_offer';
-  onContinue: (step: AIPilotStep | 'continuous_demand_offer') => void;
+  step: AIPilotFeedbackStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible';
+  onContinue: (step: AIPilotStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible') => void;
   onLater: () => void;
 }
 
@@ -15,6 +15,8 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
   const expansion = step === 'demand_pending';
   const cleared = step === 'rollout_success';
   const operational = step === 'continuous_demand_offer';
+  const turnaround = step === 'pressure_visible';
+  const capacity = step === 'review_bottleneck_visible';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <section role="dialog" aria-modal="true" aria-labelledby="pilot-introduction-title"
@@ -23,7 +25,7 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           {recognition ? <CheckCircle className="text-emerald-400" size={32} /> : <Sparkles className="text-blue-400" size={32} />}
           <div>
             <h2 id="pilot-introduction-title" className="text-xl font-bold text-slate-100">
-              {recognition ? 'AUTOMATION RECOGNIZED' : result ? 'PILOT RESULT' : expansion ? 'PILOT EXPANSION' : cleared ? 'INITIAL PILOT QUEUE CLEARED' : operational ? 'OPERATIONAL ROLLOUT' : 'ENTERPRISE AI PILOT'}
+              {recognition ? 'AUTOMATION RECOGNIZED' : result ? 'PILOT RESULT' : expansion ? 'PILOT EXPANSION' : cleared ? 'INITIAL PILOT QUEUE CLEARED' : operational ? 'OPERATIONAL ROLLOUT' : turnaround ? 'TURNAROUND TARGET' : capacity ? 'REVIEW CAPACITY' : 'ENTERPRISE AI PILOT'}
             </h2>
             <p className="text-xs font-mono uppercase text-slate-500 tracking-wider">Management update</p>
           </div>
@@ -48,6 +50,14 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
             <p>The expanded pilot has cleared its assigned workload while retaining final analyst review. Operations is moving the workflow into standard service.</p>
             <p>“We'll route routine requests directly into the review queue from now on.”</p>
             <p>Start with four requests. New requests will join the queue as you work.</p>
+          </> : turnaround ? <>
+            <p>The continuous review service is handling routine requests reliably. Operations has updated the expected turnaround for AI-assisted requests.</p>
+            <p>“The preparation step is nearly instant now. We can shorten the service target.”</p>
+            <p>New requests will be routed every four seconds. Final analyst review and EXECUTE remain part of the service.</p>
+          </> : capacity ? <>
+            <p>AI preparation time is no longer the primary constraint. Requests are spending more of their lifecycle waiting for final analyst review.</p>
+            <p>“The workflow is fast. The approval step isn't.”</p>
+            <p>This establishes the Acceleration phase. Continuous routing and final human execution continue.</p>
           </> : <>
             <p>Your automation work has earned approval for a limited AI-assisted workflow pilot. It can help prepare routine data work faster, giving you more time to review the result.</p>
             <p>“If we can reduce turnaround without adding headcount, this could be significant. Let's start with one real task.”</p>
@@ -55,7 +65,7 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           </>}
         </div>
         <button onClick={() => onContinue(step)} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded transition-colors">
-          {recognition ? 'Acknowledge progress' : result ? 'Acknowledge pilot result' : expansion ? 'Acknowledge pilot expansion' : cleared ? 'Acknowledge queue result' : operational ? 'Acknowledge operational rollout' : 'Acknowledge pilot approval'}
+          {recognition ? 'Acknowledge progress' : result ? 'Acknowledge pilot result' : expansion ? 'Acknowledge pilot expansion' : cleared ? 'Acknowledge queue result' : operational ? 'Acknowledge operational rollout' : turnaround ? 'Acknowledge turnaround target' : capacity ? 'Acknowledge review capacity' : 'Acknowledge pilot approval'}
         </button>
         <button onClick={onLater} className="w-full mt-3 py-2 text-sm text-slate-400 hover:text-slate-200">Later</button>
       </section>

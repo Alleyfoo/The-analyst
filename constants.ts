@@ -3,6 +3,7 @@ import { GameState, Upgrade, UpgradeCategory, ResourceType, GameEvent, ChatScena
 export const TICK_RATE_MS = 200; // 5 ticks per second
 export const HISTORY_LENGTH = 50;
 export const AI_REVIEW_QUEUE_CAP = 12;
+export const AI_REVIEW_ACCELERATED_INTERVAL_TICKS = 20;
 
 // Gameplay ending availability comes only from persisted expansion authority.
 export const isAscensionDeferred = (state: GameState): boolean =>

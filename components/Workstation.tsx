@@ -30,6 +30,7 @@ interface Props {
   onReviewPilot: () => void;
   operationalRollout: { offered: boolean; available: boolean };
   aiReviewDemandActive: boolean;
+  accelerationUpdate: { step: 'pressure_visible' | 'review_bottleneck_visible' | null; available: boolean };
 }
 
 const TerminalLine: React.FC<{ log: LogMessage }> = ({ log }) => {
@@ -63,7 +64,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate }) => {
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -163,6 +164,7 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
         <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
           <p>AI SQL review queue — {state.aiReviewQueue.pending} pending · {state.aiReviewQueue.completed} completed · wave {state.aiReviewQueue.wave}</p>
           {aiReviewDemandActive && <p className="mt-1 text-blue-300">INCOMING ROUTING: ACTIVE · Next request: ~{Math.ceil(Math.max(0, state.aiReviewDemand.nextArrivalTick - state.tick) * TICK_RATE_MS / 1000)}s</p>}
+          {aiReviewDemandActive && state.aiReviewDemand.arrivalIntervalTicks === 20 && <p className="mt-1 text-blue-300">ROUTING: ACCELERATED · New request every ~4s · HUMAN EXECUTION: REQUIRED</p>}
           {state.aiReviewQueue.pending > 0 && <button onClick={onReviewNextQuery} disabled={!aiReviewAvailable}
             className="mt-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">REVIEW NEXT QUERY</button>}
         </div>
@@ -172,6 +174,14 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
         <button onClick={onReviewPilot} disabled={!operationalRollout.available}
           className="mt-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">Review operational rollout</button>
         {!operationalRollout.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
+      </div>}
+      {accelerationUpdate.step && <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
+        <p>Management update available</p>
+        <button onClick={onReviewPilot} disabled={!accelerationUpdate.available}
+          className="mt-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+          {accelerationUpdate.step === 'pressure_visible' ? 'Review turnaround target' : 'Review capacity'}
+        </button>
+        {!accelerationUpdate.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
       </div>}
       <div className="flex border-b border-slate-800 bg-slate-900/50 shrink-0">
           <button 

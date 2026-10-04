@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP } from '../constants';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -18,15 +18,29 @@ const isSQLPilotReady = (state: GameState) =>
     state.expansionProgress.transition?.targetEra === 'ai_pilot' &&
     state.expansionProgress.transition.step === 'pilot_ready';
 
-const hasContinuousAIReviewDemand = (state: GameState) => state.aiReviewDemand.active &&
-    state.aiReviewQueue.wave === 3 && state.expansionProgress.era === 'ai_pilot' &&
-    state.expansionProgress.transition?.targetEra === 'acceleration' &&
-    (state.expansionProgress.transition.step === 'continuous_demand_active' || state.expansionProgress.transition.step === 'pressure_visible');
+const hasAcceleratedAIReviewDemand = (state: GameState) =>
+    (state.expansionProgress.era === 'acceleration' && state.expansionProgress.transition === null) ||
+    (state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition?.targetEra === 'acceleration' &&
+     (state.expansionProgress.transition.step === 'accelerated_routing_active' || state.expansionProgress.transition.step === 'review_bottleneck_visible'));
 
-const continuousDemandProof = (state: GameState) => hasContinuousAIReviewDemand(state) &&
-    state.aiReviewDemand.totalArrived >= 3 && state.aiReviewDemand.totalCompleted >= 3
-        ? { ...state.expansionProgress, transition: { ...state.expansionProgress.transition!, step: 'pressure_visible' } }
-        : state.expansionProgress;
+const hasContinuousAIReviewDemand = (state: GameState) => state.aiReviewDemand.active &&
+    state.aiReviewQueue.wave === 3 && (hasAcceleratedAIReviewDemand(state) || (state.expansionProgress.era === 'ai_pilot' &&
+    state.expansionProgress.transition?.targetEra === 'acceleration' &&
+    (state.expansionProgress.transition.step === 'continuous_demand_active' || state.expansionProgress.transition.step === 'pressure_visible')));
+
+const continuousDemandProof = (state: GameState) => {
+    if (!hasContinuousAIReviewDemand(state)) return state.expansionProgress;
+    const step = state.expansionProgress.transition?.step;
+    const demand = state.aiReviewDemand;
+    if (step === 'continuous_demand_active' && demand.totalArrived >= 3 && demand.totalCompleted >= 3) {
+        return { ...state.expansionProgress, transition: { ...state.expansionProgress.transition!, step: 'pressure_visible' } };
+    }
+    if (step === 'accelerated_routing_active' && demand.acceleratedArrivals >= 4 && demand.acceleratedReviews >= 2 &&
+        (demand.acceleratedPeakPending >= 6 || demand.acceleratedArrivals >= 6)) {
+        return { ...state.expansionProgress, transition: { ...state.expansionProgress.transition!, step: 'review_bottleneck_visible' } };
+    }
+    return state.expansionProgress;
+};
 
 // One scheduled opportunity per game interval; a full queue simply waits for the next.
 const arriveAIReview = (prev: GameState, tick: number): Partial<GameState> => {
@@ -34,7 +48,11 @@ const arriveAIReview = (prev: GameState, tick: number): Partial<GameState> => {
     const added = prev.aiReviewQueue.pending < AI_REVIEW_QUEUE_CAP ? 1 : 0;
     const next = { ...prev, aiReviewQueue: { ...prev.aiReviewQueue, pending: prev.aiReviewQueue.pending + added },
         aiReviewDemand: { ...prev.aiReviewDemand, nextArrivalTick: tick + prev.aiReviewDemand.arrivalIntervalTicks,
-            totalArrived: prev.aiReviewDemand.totalArrived + added } };
+            totalArrived: prev.aiReviewDemand.totalArrived + added,
+            ...(hasAcceleratedAIReviewDemand(prev) ? {
+                acceleratedArrivals: prev.aiReviewDemand.acceleratedArrivals + added,
+                acceleratedPeakPending: Math.max(prev.aiReviewDemand.acceleratedPeakPending, prev.aiReviewQueue.pending + added),
+            } : {}) } };
     return { aiReviewQueue: next.aiReviewQueue, aiReviewDemand: next.aiReviewDemand, expansionProgress: continuousDemandProof(next) };
 };
 
@@ -71,7 +89,7 @@ const hydrateState = (parsed: any): GameState => {
             active: parsed.aiReviewDemand?.active === true,
             arrivalIntervalTicks: Number.isSafeInteger(parsed.aiReviewDemand?.arrivalIntervalTicks) && parsed.aiReviewDemand.arrivalIntervalTicks > 0
                 ? parsed.aiReviewDemand.arrivalIntervalTicks : INITIAL_STATE.aiReviewDemand.arrivalIntervalTicks,
-            ...Object.fromEntries(['nextArrivalTick', 'totalArrived', 'totalCompleted'].map(key => [key,
+            ...Object.fromEntries(['nextArrivalTick', 'totalArrived', 'totalCompleted', 'acceleratedArrivals', 'acceleratedReviews', 'acceleratedPeakPending'].map(key => [key,
                 Number.isSafeInteger(parsed.aiReviewDemand?.[key]) && parsed.aiReviewDemand[key] >= 0 ? parsed.aiReviewDemand[key] : 0])),
         },
         aiReviewQueue: {
@@ -678,6 +696,27 @@ export const useGameEngine = () => {
     });
   };
 
+  const accelerationFeedbackStep = (snapshot: GameState): 'pressure_visible' | 'review_bottleneck_visible' | null => {
+    const transition = snapshot.expansionProgress.transition;
+    return snapshot.expansionProgress.era === 'ai_pilot' && hasContinuousAIReviewDemand(snapshot) &&
+      transition?.targetEra === 'acceleration' && (transition.step === 'pressure_visible' || transition.step === 'review_bottleneck_visible')
+        ? transition.step : null;
+  };
+
+  const acknowledgeAccelerationUpdate = (expectedStep: 'pressure_visible' | 'review_bottleneck_visible') => {
+    setState(prev => {
+      if (!canPresentPilotIntroduction(prev) || accelerationFeedbackStep(prev) !== expectedStep) return prev;
+      if (expectedStep === 'pressure_visible') {
+        return { ...prev, aiReviewDemand: { ...prev.aiReviewDemand,
+          arrivalIntervalTicks: AI_REVIEW_ACCELERATED_INTERVAL_TICKS,
+          nextArrivalTick: prev.tick + AI_REVIEW_ACCELERATED_INTERVAL_TICKS,
+          acceleratedArrivals: 0, acceleratedReviews: 0, acceleratedPeakPending: prev.aiReviewQueue.pending },
+          expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'acceleration', step: 'accelerated_routing_active' } } };
+      }
+      return { ...prev, expansionProgress: { ...prev.expansionProgress, era: 'acceleration', transition: null } };
+    });
+  };
+
   const manualClean = () => {
     setState(prev => {
       if (prev.blockingTask) return prev; // Blocked
@@ -789,7 +828,9 @@ export const useGameEngine = () => {
           const queue = { ...prev.aiReviewQueue, pending: prev.aiReviewQueue.pending - 1, completed: prev.aiReviewQueue.completed + 1 };
           if (hasContinuousAIReviewDemand(prev)) {
               const next = { ...sqlQueryReward(prev, 100, 250), aiReviewQueue: queue,
-                  aiReviewDemand: { ...prev.aiReviewDemand, totalCompleted: prev.aiReviewDemand.totalCompleted + 1 } };
+                  aiReviewDemand: { ...prev.aiReviewDemand, totalCompleted: prev.aiReviewDemand.totalCompleted + 1,
+                    ...(hasAcceleratedAIReviewDemand(prev) ? { acceleratedReviews: prev.aiReviewDemand.acceleratedReviews + 1,
+                      acceleratedPeakPending: Math.max(prev.aiReviewDemand.acceleratedPeakPending, prev.aiReviewQueue.pending) } : {}) } };
               return { ...next, expansionProgress: continuousDemandProof(next) };
           }
           return { ...sqlQueryReward(prev, 100, 250), aiReviewQueue: queue,
@@ -1224,6 +1265,7 @@ export const useGameEngine = () => {
     sqlQueueAttemptId,
     aiReviewAvailable: isAIReviewActive(state) && canPresentPilotIntroduction(state),
     aiReviewDemandActive: hasContinuousAIReviewDemand(state),
+    accelerationUpdate: { step: accelerationFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     operationalRollout: { offered: state.expansionProgress.era === 'ai_pilot' &&
         state.expansionProgress.transition?.targetEra === 'acceleration' && state.expansionProgress.transition.step === 'continuous_demand_offer',
         available: canPresentPilotIntroduction(state) },
@@ -1231,7 +1273,7 @@ export const useGameEngine = () => {
       beginExpansionTransition, establishExpansionEra, advancePilotIntroduction,
       beginSQLPilotAttempt, completeSQLPilotQuery,
       openNextAIReview, completeAIReviewQuery,
-      acknowledgeOperationalRollout,
+      acknowledgeOperationalRollout, acknowledgeAccelerationUpdate,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

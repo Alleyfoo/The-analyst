@@ -1,4 +1,4 @@
-// Focused S1-S3/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
+// Focused S0-S5/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
 // Browser smoke separately verifies actual rendering and persistence.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -72,6 +72,7 @@ function mount(seed = null, original = false) {
     presentation: () => api.pilotIntroduction,
     queueAttempt: () => api.sqlQueueAttemptId,
     operational: () => api.operationalRollout,
+    acceleration: () => api.accelerationUpdate,
     deferred: () => load('constants.ts').isAscensionDeferred(slots[0]),
     rebooting: () => api.isRebooting,
     timeout(ms) { const entry = [...timeouts.entries()].find(([, timer]) => timer.ms === ms); assert(entry, 'expected delayed reset'); timeouts.delete(entry[0]); entry[1].fn(); flush(); },
@@ -361,7 +362,7 @@ openMixed.action('ascend'); assert.equal(openMixed.rebooting(), true, 'older ope
 const reset = mount({ expansionProgress: { era: 'ai_pilot', transition: null }, aiReviewQueue: { pending: 6, completed: 0, wave: 2 } });
 reset.action('hardReset'); assert.equal(reset.rebooting(), true); reset.timeout(2000);
 assert.equal(reset.saved(), null); assert.equal(reset.reloads(), 1, 'factory reset remains available during expansion');
-const inactiveDemand = { active: false, arrivalIntervalTicks: 40, nextArrivalTick: 0, totalArrived: 0, totalCompleted: 0 };
+const inactiveDemand = { active: false, arrivalIntervalTicks: 40, nextArrivalTick: 0, totalArrived: 0, totalCompleted: 0, acceleratedArrivals: 0, acceleratedReviews: 0, acceleratedPeakPending: 0 };
 assert.deepEqual(mount().state().aiReviewDemand, inactiveDemand);
 assert.deepEqual(mount({ pu: 1e12, tu: 1e9, prestige: { level: 999 }, aiReviewDemand: {} }).state().aiReviewDemand, inactiveDemand);
 assert.deepEqual(mount({ aiReviewDemand: { active: 'true', arrivalIntervalTicks: 0, nextArrivalTick: -1, totalArrived: '3', totalCompleted: 1.5 } }).state().aiReviewDemand, inactiveDemand);
@@ -459,3 +460,78 @@ for (const level of [0, 3]) {
   assert.deepEqual(actual, expected, 'continuous reward/log/meeting contribution identical to ordinary SQL at prestige ' + level);
 }
 console.log('PASS: S0-S3/G1 regression plus S4 finite offer/acknowledgement, deterministic schedule/cap, active-review arrivals, manual isolation, rewards, counters/proof in both orders, save/reload/draft guards, global pauses and Ascension deferral. Hooks/timers are stubbed; Chromium covers actual UI.');
+// S5: explicit compressed routing, local proof and acknowledged establishment.
+const pressureSeed = { ...activeSeed, tick: 500, aiReviewQueue: { pending: 5, completed: 7, wave: 3 },
+  aiReviewDemand: { ...activeSeed.aiReviewDemand, totalArrived: 8, totalCompleted: 7, nextArrivalTick: 501 },
+  expansionProgress: { era: 'ai_pilot', transition: { targetEra: 'acceleration', step: 'pressure_visible' } } };
+const pressure = mount(pressureSeed);
+assert.equal(pressure.acceleration().step, 'pressure_visible');
+pressure.tick();
+assert.equal(pressure.state().aiReviewDemand.arrivalIntervalTicks, 40, 'S4 cadence remains before acknowledgement');
+assert.equal(pressure.state().aiReviewDemand.nextArrivalTick, 541);
+assert.equal(pressure.state().aiReviewDemand.acceleratedArrivals, 0);
+assert.equal(mount(pressure.save()).acceleration().step, 'pressure_visible', 'deferral/reload keeps update');
+for (const blocker of ['spaghettiMode', 'pandasMode', 'sqlMode', 'modelMode', 'miningMode', 'flowMode', 'buzzwordMode', 'pdfMode', 'isAscending'].map(k => ({[k]:true})).concat([
+  { boardMeeting: { active:true } }, { coffeeBreak: { active:true } }, { blockingTask: { name:'Busy' } }, { activeEvents:[{id:'storage_full_warning'}] }
+])) {
+  const game = mount({...pressureSeed,...blocker}), before=game.state();
+  assert.equal(game.acceleration().available,false);
+  game.action('acknowledgeAccelerationUpdate','pressure_visible'); assert.deepEqual(game.state(),before);
+}
+for (const seed of [activeSeed, offerSeed, { ...pressureSeed, aiReviewDemand: inactiveDemand }, {...pressureSeed,expansionProgress:{era:'analyst',transition:null}}, {...pressureSeed,aiReviewQueue:{pending:10,completed:9,wave:2}}]) {
+  const game=mount(seed), before=game.state(); game.action('acknowledgeAccelerationUpdate','pressure_visible'); assert.deepEqual(game.state(),before,'exact entry required');
+}
+const accelerated=mount(pressureSeed), pre=accelerated.state();
+accelerated.action('acknowledgeAccelerationUpdate','review_bottleneck_visible'); assert.deepEqual(accelerated.state(),pre,'cannot skip target');
+accelerated.action('acknowledgeAccelerationUpdate','pressure_visible');
+const acceleratedSeed=accelerated.save();
+assert.deepEqual(acceleratedSeed.aiReviewQueue,pre.aiReviewQueue,'queue intact');
+assert.deepEqual(acceleratedSeed.aiReviewDemand,{...pre.aiReviewDemand,arrivalIntervalTicks:20,nextArrivalTick:520,acceleratedArrivals:0,acceleratedReviews:0,acceleratedPeakPending:5});
+assert.deepEqual(acceleratedSeed.expansionProgress,{era:'ai_pilot',transition:{targetEra:'acceleration',step:'accelerated_routing_active'}});
+const ackOnce=accelerated.state(); accelerated.action('acknowledgeAccelerationUpdate','pressure_visible'); assert.deepEqual(accelerated.state(),ackOnce);
+accelerated.action('establishExpansionEra','acceleration'); assert.deepEqual(accelerated.state(),ackOnce,'generic action cannot bypass proof/ack');
+for(let i=0;i<19;i++)accelerated.tick(); assert.equal(accelerated.state().aiReviewDemand.acceleratedArrivals,0);
+const nearArrival=mount(accelerated.save());nearArrival.tick();
+assert.equal(nearArrival.state().aiReviewDemand.acceleratedArrivals,1);assert.equal(nearArrival.state().aiReviewQueue.pending,6);
+assert.equal(nearArrival.state().aiReviewDemand.acceleratedPeakPending,6);
+const afterAcceleratedArrival=mount(nearArrival.save());afterAcceleratedArrival.tick();assert.equal(afterAcceleratedArrival.state().aiReviewDemand.acceleratedArrivals,1,'no reload duplication');
+function review(game){game.action('openNextAIReview');const id=game.queueAttempt();assert.equal(typeof id,'number');game.action('completeAIReviewQuery',id);const paid=game.state();game.action('completeAIReviewQuery',id);assert.deepEqual(game.state(),paid,'one accepted execution');game.action('toggleSQLMode');}
+function ticks(game,n){for(let i=0;i<n;i++)game.tick();}
+const openAccelerated=mount(acceleratedSeed);openAccelerated.action('openNextAIReview');const openID=openAccelerated.queueAttempt();ticks(openAccelerated,20);
+assert.equal(openAccelerated.state().sqlMode,true);assert.equal(openAccelerated.state().aiReviewQueue.pending,6);
+openAccelerated.action('completeAIReviewQuery',openID);assert.equal(openAccelerated.state().aiReviewQueue.pending,5);assert.equal(openAccelerated.state().aiReviewDemand.acceleratedReviews,1);
+const acceleratedManual=mount(acceleratedSeed), beforeManual=acceleratedManual.state();acceleratedManual.action('completeSQLQuery',100,250);
+assert.deepEqual(acceleratedManual.state().aiReviewDemand,beforeManual.aiReviewDemand);assert.deepEqual(acceleratedManual.state().aiReviewQueue,beforeManual.aiReviewQueue);
+const backlogPath=mount(acceleratedSeed);review(backlogPath);review(backlogPath);ticks(backlogPath,60);
+assert.equal(backlogPath.state().aiReviewDemand.acceleratedArrivals,3);assert.equal(backlogPath.state().expansionProgress.transition.step,'accelerated_routing_active','fewer than four arrivals');
+ticks(backlogPath,20);assert.equal(backlogPath.state().aiReviewDemand.acceleratedPeakPending,7);
+assert.equal(backlogPath.state().expansionProgress.transition.step,'review_bottleneck_visible','backlog pressure path');
+const reviewsMissing=mount(acceleratedSeed);ticks(reviewsMissing,80);review(reviewsMissing);
+assert.equal(reviewsMissing.state().expansionProgress.transition.step,'accelerated_routing_active','fewer than two reviews');
+review(reviewsMissing);assert.equal(reviewsMissing.state().expansionProgress.transition.step,'review_bottleneck_visible','arrival-first order');
+const fast=mount({...acceleratedSeed,aiReviewQueue:{pending:0,completed:7,wave:3},aiReviewDemand:{...acceleratedSeed.aiReviewDemand,acceleratedPeakPending:0}});
+for(let i=0;i<5;i++){ticks(fast,20);review(fast);assert.equal(fast.state().expansionProgress.transition.step,'accelerated_routing_active');}
+assert.equal(fast.state().aiReviewDemand.acceleratedPeakPending,1);ticks(fast,20);
+assert.equal(fast.state().expansionProgress.transition.step,'review_bottleneck_visible','six arrivals avoid low-backlog lock');
+const visible=mount(backlogPath.save());assert.equal(visible.acceleration().step,'review_bottleneck_visible');
+const visibleProgress=visible.state().expansionProgress;ticks(visible,20);assert.deepEqual(visible.state().expansionProgress,visibleProgress,'proof stable, no auto establishment');
+for(const block of [{sqlMode:true},{boardMeeting:{active:true}},{isAscending:true}]){const denied=mount({...visible.save(),...block}),before=denied.state();denied.action('acknowledgeAccelerationUpdate','review_bottleneck_visible');assert.deepEqual(denied.state(),before);}
+const beforeEstablish=visible.state();visible.action('acknowledgeAccelerationUpdate','review_bottleneck_visible');
+const established=visible.state();assert.deepEqual(established.expansionProgress,{era:'acceleration',transition:null});
+assert.deepEqual(established.aiReviewQueue,beforeEstablish.aiReviewQueue);assert.deepEqual(established.aiReviewDemand,beforeEstablish.aiReviewDemand,'service unchanged by establishment');
+const establishedReload=mount(visible.save());assert.deepEqual(establishedReload.state().aiReviewDemand,established.aiReviewDemand);
+assert.deepEqual(establishedReload.state().expansionProgress,established.expansionProgress);ticks(establishedReload,20);
+assert.equal(establishedReload.state().aiReviewDemand.acceleratedArrivals,established.aiReviewDemand.acceleratedArrivals+1);review(establishedReload);
+assert.equal(establishedReload.state().aiReviewDemand.acceleratedReviews,established.aiReviewDemand.acceleratedReviews+1);
+assert.equal(establishedReload.state().expansionProgress.transition,null,'established service never recreates proof transition');
+for(const seed of [pressureSeed,acceleratedSeed,backlogPath.save(),visible.save()]){const game=mount(seed);assert.equal(game.deferred(),true);const before=game.state();game.purchase('project_omniscience');game.action('ascend');assert.deepEqual(game.state(),before,'G1 unchanged at every S5 stage');}
+const acceleratedCapSeed={...acceleratedSeed,aiReviewQueue:{pending:12,completed:7,wave:3},aiReviewDemand:{...acceleratedSeed.aiReviewDemand,acceleratedPeakPending:12}};
+const cap=mount(acceleratedCapSeed),capReference=mount({...acceleratedCapSeed,aiReviewDemand:{...acceleratedCapSeed.aiReviewDemand,active:false}});ticks(cap,60);ticks(capReference,60);
+assert.equal(cap.state().aiReviewDemand.acceleratedArrivals,0);assert.equal(cap.state().aiReviewDemand.totalArrived,8);assert.equal(cap.state().aiReviewQueue.pending,12);
+const capActual=cap.state(),capExpected=capReference.state();delete capActual.aiReviewDemand;delete capExpected.aiReviewDemand;assert.deepEqual(capActual,capExpected,'accelerated cap no penalty');
+review(cap);ticks(cap,20);assert.equal(cap.state().aiReviewQueue.pending,12);assert.equal(cap.state().aiReviewDemand.acceleratedArrivals,1);
+const abandonedAccelerated=mount(acceleratedSeed);abandonedAccelerated.action('openNextAIReview');const abandonedAcceleratedID=abandonedAccelerated.queueAttempt();
+const unfinished=mount(abandonedAccelerated.save()),unfinishedBefore=unfinished.state();unfinished.action('completeAIReviewQuery',abandonedAcceleratedID);assert.deepEqual(unfinished.state(),unfinishedBefore);
+for(const seed of [acceleratedSeed,visible.save()])for(const level of [0,3]){const game=mount({...seed,tick:300,prestige:{level}});game.action('openNextAIReview');game.tick();const before=game.state(),manual=mount(before);manual.action('completeSQLQuery',100,250);game.action('completeAIReviewQuery',game.queueAttempt());const actual=game.state(),expected=manual.state();for(const key of ['aiReviewQueue','aiReviewDemand','expansionProgress']){delete actual[key];delete expected[key];}assert.deepEqual(actual,expected,'S5 reward/meeting parity');}
+assert.equal(mount({aiReviewDemand:{acceleratedArrivals:-1,acceleratedReviews:'2',acceleratedPeakPending:1.5}}).state().aiReviewDemand.acceleratedArrivals,0);
+console.log('PASS S5: explicit updates, 20-tick schedule, queue preservation, both proof paths/orders, cap/no penalties, manual isolation, draft/reload guards, continued service after establishment, reward/meeting parity and G1.');
