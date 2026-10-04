@@ -1,6 +1,6 @@
 # Known quirks — preserved
 
-The original findings below are from baseline source inspection. “Confirmed” in those sections means the branch/contradiction follows directly from code. A subsequent minimal runtime smoke check is recorded separately below; it was not a gameplay playthrough. Nothing here was fixed.
+The original findings below are from baseline source inspection. “Confirmed” in those sections means the branch/contradiction follows directly from code. A subsequent minimal runtime smoke check is recorded separately below; it was not a gameplay playthrough. The original inspection did not fix these findings; subsequent explicitly authorized corrections are marked below.
 
 ## Reproducibility validation — 2026-10-03
 
@@ -41,8 +41,8 @@ All original gameplay defects, description discrepancies and suspicions below re
 
 ## Suspicious behavior / validation needed
 
-- **Mixed time bases:** central simulation is fixed-step interval timing, chat urgency uses wall time, Process Mining and Data Flow motion/spawn rates use animation frames. Data Flow computes `dt` but does not use it. Process path advances 2 horizontal pixels for 1000 points starting at 10% of viewport width, so its end leaves ordinary-width screens; only 999 positions can score while denominator is 1000. Check actual viewport/playability before changing this (`ProcessMiningGame` generation/animation effects).
-- **Uncancelled work:** Pandas/SQL/Model/Process success timeouts are not cleared on close. Their delayed `onClose` toggles a mode and can reopen a closed game. Process animation effect depends on status, not active, so closing while running does not directly cancel its animation. Pandas completion effect lacks an active guard, and a retained completed board may schedule a reward when a new board is opening. These lifecycle paths need browser reproduction.
+- **Mixed time bases:** central simulation is fixed-step interval timing, chat urgency uses wall time, and Data Flow motion/spawn rates use animation frames. Data Flow computes `dt` but does not use it. **Historical/fixed in P2:** Process Mining used animation frames and a 1000-point path advancing 2 horizontal pixels from 10% of viewport width; its target left ordinary screens while work continued, and only 999 positions could score against a denominator of 1000. The entire mechanic was replaced (`ProcessMiningGame::TraceAnalysisRound`).
+- **Uncancelled work:** Pandas/SQL/Model success timeouts are not cleared on close. Their delayed `onClose` toggles a mode and can reopen a closed game. Pandas completion effect lacks an active guard, and a retained completed board may schedule a reward when a new board is opening. These unrelated lifecycle paths still need browser reproduction. **Historical/fixed in P2:** Process Mining animation depended on status rather than active, and its delayed completion timeout could fire after close. The replacement has neither scheduler nor completion timeout and unmounts the local round on close.
 - **StrictMode and updater side effects:** `index.tsx` enables StrictMode. `addLog` schedules state updates from inside state updaters; Buzzword updates score within `setWords`, and ascension writes localStorage/reloads inside an updater. Development double invocation could duplicate side effects. Not validated at runtime.
 - **No uniform bounds:** many quality/trust/relationship effects do not clamp; viral event can make TU negative until next simulation clamp. Economy can exceed 100. Action logs append while loop logs prepend; not all writes trim. Do not assume percentage or count invariants solely from `types.ts` comments.
 - **Penalties/bonuses compound unevenly:** metricDelta already includes prestige/layoff factors, then PU/TU formulas multiply again. Dashboard/model terms are per tick rather than time-scaled; marketing raw bypasses both multipliers. Intent cannot be established from comments alone (`useGameEngine` main loop).
@@ -62,3 +62,20 @@ Randomness has no seed or replay system: chats, rival mocks, market volatility/c
 - **Confirmed ending design trap — corrected by explicit P1 authority.** S16's intentional irreversible Govern route offered no New Game+ even after stabilization. `canRebootExpansion` now enables the dedicated confirmed reset after exact target/first-stabilization plus complete ending proof. `Workstation` replaces the dead deferred presentation with the available expansion exit, and solved `AccessMatrix` opens confirmation. Old Ascension remains deferred; unsolved governance has no exit. No recurring governance lifecycle was added.
 
 These findings are distinct from the unchanged source-only suspicions and historical baseline discrepancies above. No additional runtime failure was reproduced during the scoped P1 smoke.
+
+
+## Playtest correction P2 — Process Mining (2026-10-04)
+
+### Confirmed playtest issues, now corrected
+
+The user reproduced the old invisible/off-screen target, refresh-rate-dependent duration, unclear automatic completion and hidden work after closing. Those Process Mining observations above are historical. `components/ProcessMiningGame.tsx::TraceAnalysisRound` now uses six fixed cases per scenario, readable wait bars/route counts, two answers, immediate results and explicit once-only completion. The inactive wrapper unmounts the round; it contains no effects, timers, animation frames, canvas or viewport-derived game geometry. Unclaimed close pays nothing; fresh reopening has empty selections.
+
+### Validation scope
+
+`scripts/check-process-mining.cjs` checks all three datasets against their waits/routes, both required selections, 50/5–25/2–0/0 callback inputs, submit without payout, duplicate/stale claims, close/fresh round and absence of schedulers. It also compares the unchanged engine reward function with the original baseline and exercises prestige levels 0/3 with active/inactive meetings: scaled metrics/TU, TU×10×M meeting contribution, one log and no PU reward.
+
+Isolated Chromium checks solve all three scenarios from displayed traces/waits through the real workstation/save path. Responsive checks at 1920×1080, 1280×800 and 1024×768 cover evidence, pinned map, questions, bottom submit, results, explicit completion, close/reopen and all reward outcomes. Temporary screenshots are visually inspected; user saves are untouched. These checks do not exhaustively play other minigames or expansion progression.
+
+### Build/tooling and remaining suspicions
+
+Build and TypeScript check pass. Existing missing `/index.css` and large-chunk warnings remain. No new runtime issue was observed within this scope. Other minigame lifecycle suspicions remain unmodified and unreproduced by P2.

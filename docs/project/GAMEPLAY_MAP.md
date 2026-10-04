@@ -103,7 +103,22 @@ All reward actions below live in `hooks/useGameEngine.ts`; wiring is in `App.tsx
 | `PandasMappingGame` completion effect; pandas_scripts | Match five random header pairs; after 1.5s, cost 20 raw, reward 50 clean, quality `max(0.01,0.05-0.01*mistakes)` | `completePandasLevel` rejects whole reward if raw <20 at completion, clamps quality to 1; no meeting contribution |
 | `SQLMiningGame::handleExecute`; sql_optimization | Build one exact token sequence; errors have no resource penalty; success after 1.5s | `completeSQLQuery`: free +100 clean/+250 PU; PU counts for meeting |
 | `ModelTrainingGame::handleDeploy`; data_scientist (unreachable ordinarily) | Slider fits generated training/validation data. PU `floor(trainingAccuracy*25)`; accuracy/generalization gap >30: TU -20/entropy +10; >15: TU 0/entropy +5; else accuracy <50: TU 0/entropy 0; otherwise TU `floor(generalization)`/entropy -5 | `completeModelTraining`: always models +1, grants PU/TU with TU floor zero and entropy clamp 0..100; PU counts for meeting; no input cost |
-| `ProcessMiningGame` animation effect; event_tracking | Follow 1000-point signal; accuracy=tracked frames/1000. Rewards `floor(accuracy*50)` metrics, `floor(accuracy*5)` TU after 1.5s | `completeMiningLevel`: free metrics/TU; meeting progress +10*TU reward*M; no PU reward |
+| `ProcessMiningGame::TraceAnalysisRound`; event_tracking | Inspect six authored case traces; select accumulated-wait bottleneck and abnormal route. Submit ends the round immediately, including wrong answers; explicit COMPLETE ANALYSIS claims 50 metrics/5 TU for two correct, 25/2 for one, 0/0 for none | `completeMiningLevel` unchanged: free metrics/TU scaled by M; active meeting progress +10*TU reward*M; no PU reward |
 | `DataFlowGame` timer effect; cloud_bucket | 20s gate routing; valid-in-DB increases valid score, noise-in-trash increases noise score; wrong bucket decrements corresponding score floor zero | `completeFlowBatch`: +5*valid clean, entropy -floor(noise/2) floor zero; meeting progress +0.5*cleanReward*M; no raw cost/PU reward |
 | `BuzzwordBattle::handleClaim`; Eric chat challenge | 15s real/fake word selection; real +1 score, fake -1 floor zero, new batch after all real found; claim also available on zero-score defeat | `completeBuzzwordBattle`: +100*score PU, steals min(Eric clean,50*score) clean, Eric relationship +15 even on defeat; no prestige boost or meeting progress |
 | `PDFScanningGame::handleClaim`; pdf_parser | Drag to overlap all tables; images count as noise, text does not. Claim raw `max(100,500-50*noise)`, clean `max(0,50-10*noise)` | `completePDFBatch`: awards scaled raw up to storage cap and scaled clean, logs overflow; no meeting progress or entropy penalty |
+
+
+## Process Mining rewrite — P2
+
+Current evidence: `components/ProcessMiningGame.tsx::SCENARIOS` / `TraceAnalysisRound`; entry remains `Workstation`'s `event_tracking` gate and `App.tsx` callback wiring. This replaces the original moving-signal activity only.
+
+The pinned expected process is RECEIVED → VALIDATE → ENRICH → APPROVE → PUBLISH. Each fixed dataset has four canonical cases and two cases sharing one abnormal route. Per-visit wait bars share a scale; accumulated wait includes repeat visits; observed route counts come from the case traces. Scenario selection alone is random on opening; traces are authored, not generated.
+
+| Scenario | Evidenced bottleneck (total minutes) | Abnormal route |
+| --- | --- | --- |
+| Product listing approvals | APPROVE (90) | APPROVE → ENRICH → APPROVE rework |
+| Supplier intake validation | VALIDATE (88) | VALIDATE → RECEIVED → VALIDATE rework |
+| Catalogue enrichment | ENRICH (81) | ENRICH → PUBLISH, skipping APPROVE |
+
+Both local selections are required to submit. The immediate result shows chosen and observed answers with a short evidence explanation; submission pays nothing and does not permit repeated guessing. Only COMPLETE ANALYSIS calls `onComplete(metricsReward, tuReward)` once and closes. Closing before claiming pays nothing. The active wrapper unmounts the local round on close; reopening recreates scenario, selections, result and claim guard. No board is saved, and there are no local timers, animation loops or delayed callbacks. The central simulation still continues. Prestige, meeting contribution and logging remain in the unchanged `useGameEngine::completeMiningLevel`.
