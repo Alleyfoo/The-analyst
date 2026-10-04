@@ -24,7 +24,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive } = useGameEngine();
   const [pilotOpen, setPilotOpen] = useState(false);
   useEffect(() => {
     if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready' || pilotIntroduction.step === 'rollout_review') setPilotOpen(false);
@@ -116,6 +116,7 @@ const App: React.FC = () => {
         onPilotComplete={actions.completeSQLPilotQuery}
         queueAttemptId={sqlQueueAttemptId}
         onQueueComplete={actions.completeAIReviewQuery}
+        incomingQueuePending={aiReviewDemandActive && sqlQueueAttemptId !== null ? state.aiReviewQueue.pending : null}
       />
 
       <ModelTrainingGame 
@@ -164,9 +165,12 @@ const App: React.FC = () => {
       {pilotOpen && pilotIntroduction.available && pilotIntroduction.step && pilotIntroduction.step !== 'pilot_ready' && pilotIntroduction.step !== 'rollout_review' && (
         <AIPilotIntroduction
           step={pilotIntroduction.step}
-          onContinue={actions.advancePilotIntroduction}
+          onContinue={step => { if (step !== 'continuous_demand_offer') actions.advancePilotIntroduction(step); }}
           onLater={() => setPilotOpen(false)}
         />
+      )}
+      {pilotOpen && operationalRollout.offered && operationalRollout.available && (
+        <AIPilotIntroduction step="continuous_demand_offer" onContinue={actions.acknowledgeOperationalRollout} onLater={() => setPilotOpen(false)} />
       )}
 
       {/* Top Bar */}
@@ -213,6 +217,8 @@ const App: React.FC = () => {
                 onReviewPilot={() => setPilotOpen(true)}
                 aiReviewAvailable={aiReviewAvailable}
                 onReviewNextQuery={actions.openNextAIReview}
+                operationalRollout={operationalRollout}
+                aiReviewDemandActive={aiReviewDemandActive}
             />
         </div>
 

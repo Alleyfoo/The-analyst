@@ -174,6 +174,7 @@ export interface GameState {
   // Persisted progression authority and purpose-specific finite SQL workload.
   expansionProgress: ExpansionProgress;
   aiReviewQueue: { pending: number; completed: number; wave: number };
+  aiReviewDemand: { active: boolean; arrivalIntervalTicks: number; nextArrivalTick: number; totalArrived: number; totalCompleted: number };
 
   // Resources
   rawData: number;
@@ -245,6 +246,7 @@ export interface GameState {
 export const INITIAL_STATE: GameState = {
   expansionProgress: { era: 'analyst', transition: null },
   aiReviewQueue: { pending: 0, completed: 0, wave: 0 },
+  aiReviewDemand: { active: false, arrivalIntervalTicks: 40, nextArrivalTick: 0, totalArrived: 0, totalCompleted: 0 },
   rawData: 100, 
   maxStorage: 500, // Initial cap
   cleanData: 0,

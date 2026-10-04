@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred } from '../constants';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -18,10 +18,31 @@ const isSQLPilotReady = (state: GameState) =>
     state.expansionProgress.transition?.targetEra === 'ai_pilot' &&
     state.expansionProgress.transition.step === 'pilot_ready';
 
+const hasContinuousAIReviewDemand = (state: GameState) => state.aiReviewDemand.active &&
+    state.aiReviewQueue.wave === 3 && state.expansionProgress.era === 'ai_pilot' &&
+    state.expansionProgress.transition?.targetEra === 'acceleration' &&
+    (state.expansionProgress.transition.step === 'continuous_demand_active' || state.expansionProgress.transition.step === 'pressure_visible');
+
+const continuousDemandProof = (state: GameState) => hasContinuousAIReviewDemand(state) &&
+    state.aiReviewDemand.totalArrived >= 3 && state.aiReviewDemand.totalCompleted >= 3
+        ? { ...state.expansionProgress, transition: { ...state.expansionProgress.transition!, step: 'pressure_visible' } }
+        : state.expansionProgress;
+
+// One scheduled opportunity per game interval; a full queue simply waits for the next.
+const arriveAIReview = (prev: GameState, tick: number): Partial<GameState> => {
+    if (prev.isAscending || !hasContinuousAIReviewDemand(prev) || tick < prev.aiReviewDemand.nextArrivalTick) return {};
+    const added = prev.aiReviewQueue.pending < AI_REVIEW_QUEUE_CAP ? 1 : 0;
+    const next = { ...prev, aiReviewQueue: { ...prev.aiReviewQueue, pending: prev.aiReviewQueue.pending + added },
+        aiReviewDemand: { ...prev.aiReviewDemand, nextArrivalTick: tick + prev.aiReviewDemand.arrivalIntervalTicks,
+            totalArrived: prev.aiReviewDemand.totalArrived + added } };
+    return { aiReviewQueue: next.aiReviewQueue, aiReviewDemand: next.aiReviewDemand, expansionProgress: continuousDemandProof(next) };
+};
+
 const isAIReviewActive = (state: GameState) => state.aiReviewQueue.pending > 0 && (
     (state.aiReviewQueue.wave === 1 && state.expansionProgress.era === 'automation' &&
      state.expansionProgress.transition?.targetEra === 'ai_pilot' && state.expansionProgress.transition.step === 'rollout_review') ||
-    (state.aiReviewQueue.wave === 2 && state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition === null)
+    (state.aiReviewQueue.wave === 2 && state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition === null) ||
+    hasContinuousAIReviewDemand(state)
 );
 
 // Shared reward calculation keeps the assistive trial economically identical to manual SQL.
@@ -45,6 +66,14 @@ const hydrateState = (parsed: any): GameState => {
     const state: GameState = {
         ...INITIAL_STATE,
         ...parsed,
+        aiReviewDemand: {
+            ...INITIAL_STATE.aiReviewDemand,
+            active: parsed.aiReviewDemand?.active === true,
+            arrivalIntervalTicks: Number.isSafeInteger(parsed.aiReviewDemand?.arrivalIntervalTicks) && parsed.aiReviewDemand.arrivalIntervalTicks > 0
+                ? parsed.aiReviewDemand.arrivalIntervalTicks : INITIAL_STATE.aiReviewDemand.arrivalIntervalTicks,
+            ...Object.fromEntries(['nextArrivalTick', 'totalArrived', 'totalCompleted'].map(key => [key,
+                Number.isSafeInteger(parsed.aiReviewDemand?.[key]) && parsed.aiReviewDemand[key] >= 0 ? parsed.aiReviewDemand[key] : 0])),
+        },
         aiReviewQueue: {
             ...INITIAL_STATE.aiReviewQueue,
             ...Object.fromEntries(['pending', 'completed', 'wave'].map(key => [key,
@@ -545,7 +574,8 @@ export const useGameEngine = () => {
         activeCampaigns: activeCampaigns,
         blockingTask: blockingTask,
         rival: rival,
-        ...stateDeltaFromTask
+        ...stateDeltaFromTask,
+        ...arriveAIReview(prev, prev.tick + 1)
       }));
 
     }, TICK_RATE_MS);
@@ -561,6 +591,9 @@ export const useGameEngine = () => {
       if (prev.expansionProgress.transition || prev.expansionProgress.era === targetEra) return prev;
       if (targetEra === 'ai_pilot' && (prev.expansionProgress.era !== 'analyst' ||
           step !== 'automation_recognized' || !isAIPilotEligible(prev))) return prev;
+      if (targetEra === 'acceleration' && (prev.expansionProgress.era !== 'ai_pilot' ||
+          step !== 'continuous_demand_offer' || prev.aiReviewQueue.wave !== 2 ||
+          prev.aiReviewQueue.pending !== 0 || prev.aiReviewQueue.completed !== 6 || prev.aiReviewDemand.active)) return prev;
       return {
         ...prev,
         expansionProgress: { ...prev.expansionProgress, transition: { targetEra, step } },
@@ -572,7 +605,7 @@ export const useGameEngine = () => {
     setState(prev => {
       if (!isExpansionEra(targetEra)) return prev;
       // AI establishment belongs exclusively to the acknowledged first-queue result below.
-      if (targetEra === 'ai_pilot') return prev;
+      if (targetEra === 'ai_pilot' || targetEra === 'acceleration') return prev;
       if (prev.expansionProgress.transition?.targetEra !== targetEra) return prev;
       return {
         ...prev,
@@ -587,6 +620,14 @@ export const useGameEngine = () => {
       beginExpansionTransition('ai_pilot', 'automation_recognized');
     }
   }, [eligibleForPilot, state.expansionProgress, state.isAscending, beginExpansionTransition]);
+
+  // Recover a fully cleared finite wave from pre-S4 saves without replaying six jobs.
+  useEffect(() => {
+    if (!state.isAscending && state.expansionProgress.era === 'ai_pilot' && !state.expansionProgress.transition &&
+        state.aiReviewQueue.wave === 2 && state.aiReviewQueue.pending === 0 && state.aiReviewQueue.completed === 6 && !state.aiReviewDemand.active) {
+      beginExpansionTransition('acceleration', 'continuous_demand_offer');
+    }
+  }, [state.isAscending, state.expansionProgress, state.aiReviewQueue, state.aiReviewDemand.active, beginExpansionTransition]);
 
   const pendingPilot = state.expansionProgress.transition;
   const pilotStep = pendingPilot?.targetEra === 'ai_pilot'
@@ -623,6 +664,17 @@ export const useGameEngine = () => {
           transition: { ...transition, step: expectedStep === 'automation_recognized' ? 'pilot_announced' : expectedStep === 'pilot_announced' ? 'pilot_ready' : 'demand_pending' },
         },
       };
+    });
+  };
+
+  const acknowledgeOperationalRollout = () => {
+    setState(prev => {
+      if (!canPresentPilotIntroduction(prev) || prev.expansionProgress.era !== 'ai_pilot' ||
+          prev.expansionProgress.transition?.targetEra !== 'acceleration' || prev.expansionProgress.transition.step !== 'continuous_demand_offer' ||
+          prev.aiReviewQueue.wave !== 2 || prev.aiReviewQueue.pending !== 0 || prev.aiReviewQueue.completed !== 6 || prev.aiReviewDemand.active) return prev;
+      return { ...prev, aiReviewQueue: { pending: 4, completed: 0, wave: 3 },
+        aiReviewDemand: { ...INITIAL_STATE.aiReviewDemand, active: true, nextArrivalTick: prev.tick + INITIAL_STATE.aiReviewDemand.arrivalIntervalTicks },
+        expansionProgress: { ...prev.expansionProgress, transition: { ...prev.expansionProgress.transition, step: 'continuous_demand_active' } } };
     });
   };
 
@@ -735,9 +787,16 @@ export const useGameEngine = () => {
           if (!isAIReviewActive(prev) || !prev.sqlMode || !attempt || attempt.id !== attemptId ||
               attempt.wave !== prev.aiReviewQueue.wave || attempt.completed !== prev.aiReviewQueue.completed) return prev;
           const queue = { ...prev.aiReviewQueue, pending: prev.aiReviewQueue.pending - 1, completed: prev.aiReviewQueue.completed + 1 };
+          if (hasContinuousAIReviewDemand(prev)) {
+              const next = { ...sqlQueryReward(prev, 100, 250), aiReviewQueue: queue,
+                  aiReviewDemand: { ...prev.aiReviewDemand, totalCompleted: prev.aiReviewDemand.totalCompleted + 1 } };
+              return { ...next, expansionProgress: continuousDemandProof(next) };
+          }
           return { ...sqlQueryReward(prev, 100, 250), aiReviewQueue: queue,
               expansionProgress: queue.wave === 1 && queue.pending === 0
                   ? { ...prev.expansionProgress, transition: { targetEra: 'ai_pilot', step: 'rollout_success' } }
+                  : queue.wave === 2 && queue.pending === 0
+                    ? { ...prev.expansionProgress, transition: { targetEra: 'acceleration', step: 'continuous_demand_offer' } }
                   : prev.expansionProgress };
       });
   };
@@ -1164,10 +1223,15 @@ export const useGameEngine = () => {
     sqlPilotAvailable: isSQLPilotReady(state),
     sqlQueueAttemptId,
     aiReviewAvailable: isAIReviewActive(state) && canPresentPilotIntroduction(state),
+    aiReviewDemandActive: hasContinuousAIReviewDemand(state),
+    operationalRollout: { offered: state.expansionProgress.era === 'ai_pilot' &&
+        state.expansionProgress.transition?.targetEra === 'acceleration' && state.expansionProgress.transition.step === 'continuous_demand_offer',
+        available: canPresentPilotIntroduction(state) },
     actions: {
       beginExpansionTransition, establishExpansionEra, advancePilotIntroduction,
       beginSQLPilotAttempt, completeSQLPilotQuery,
       openNextAIReview, completeAIReviewQuery,
+      acknowledgeOperationalRollout,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

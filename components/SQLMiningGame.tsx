@@ -12,6 +12,7 @@ interface Props {
   onPilotComplete: (attemptId: number) => void;
   queueAttemptId: number | null;
   onQueueComplete: (attemptId: number) => void;
+  incomingQueuePending: number | null;
 }
 
 // Simple puzzle logic
@@ -33,7 +34,7 @@ const FRAGMENTS = [
     "Code=500", "Active=FALSE", "Active=TRUE", "Code=404"
 ];
 
-export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete, pilotAvailable, onBeginPilot, onPilotComplete, queueAttemptId, onQueueComplete }) => {
+export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete, pilotAvailable, onBeginPilot, onPilotComplete, queueAttemptId, onQueueComplete, incomingQueuePending }) => {
     const [requestIndex, setRequestIndex] = useState(0);
     const [query, setQuery] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -195,6 +196,7 @@ export const SQLMiningGame: React.FC<Props> = ({ active, onClose, onComplete, pi
                          </div>
                          <button onClick={handleClose} aria-label="Close SQL query"><X size={18} className="text-slate-500 hover:text-white" /></button>
                     </div>
+                    {incomingQueuePending !== null && <p className="px-4 py-2 text-xs text-blue-300 border-b border-slate-700">INCOMING ROUTING: ACTIVE · {incomingQueuePending} pending</p>}
 
                     <div className="p-6 bg-slate-900/50 flex-1 flex flex-col gap-6">
                         {/* Task */}

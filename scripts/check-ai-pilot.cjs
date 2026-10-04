@@ -71,6 +71,7 @@ function mount(seed = null, original = false) {
     state: () => JSON.parse(JSON.stringify(slots[0])),
     presentation: () => api.pilotIntroduction,
     queueAttempt: () => api.sqlQueueAttemptId,
+    operational: () => api.operationalRollout,
     deferred: () => load('constants.ts').isAscensionDeferred(slots[0]),
     rebooting: () => api.isRebooting,
     timeout(ms) { const entry = [...timeouts.entries()].find(([, timer]) => timer.ms === ms); assert(entry, 'expected delayed reset'); timeouts.delete(entry[0]); entry[1].fn(); flush(); },
@@ -86,8 +87,8 @@ const progress = step => ({ era: step === 'automation_recognized' ? 'analyst' : 
 function compareTicks(seed) {
   const oldGame = mount(seed, true), newGame = mount(seed);
   for (let tick = 0; tick <= 20; tick++) {
-    const actual = newGame.state(); delete actual.expansionProgress; delete actual.aiReviewQueue;
-    const expected = oldGame.state(); delete expected.expansionProgress; delete expected.aiReviewQueue;
+    const actual = newGame.state(); delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand;
+    const expected = oldGame.state(); delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand;
     assert.deepEqual(actual, expected, 'baseline state at tick ' + tick);
     if (tick < 20) { oldGame.tick(); newGame.tick(); }
   }
@@ -125,7 +126,7 @@ game.action('advancePilotIntroduction', 'pilot_announced');
 game.action('establishExpansionEra', 'ai_pilot');
 game.action('advancePilotIntroduction', 'pilot_ready');
 assert.deepEqual(game.state().expansionProgress, progress('pilot_ready'));
-const after = game.state(); delete before.expansionProgress; delete before.aiReviewQueue; delete after.expansionProgress; delete after.aiReviewQueue;
+const after = game.state(); delete before.expansionProgress; delete before.aiReviewQueue; delete before.aiReviewDemand; delete after.expansionProgress; delete after.aiReviewQueue; delete after.aiReviewDemand;
 assert.deepEqual(after, before, 'acknowledgements change only progression');
 for (const blocker of ['spaghettiMode', 'pandasMode', 'sqlMode', 'modelMode', 'miningMode', 'flowMode', 'buzzwordMode', 'pdfMode', 'isAscending']) {
   const blocked = mount({ ...eligibleSeed, [blocker]: true });
@@ -162,13 +163,13 @@ for (const level of [0, 3]) for (const meeting of [false, true]) {
   manual.action('completeSQLQuery', 100, 250);
   originalSQL.action('completeSQLQuery', 100, 250);
   const currentManual = manual.state(), baselineManual = originalSQL.state();
-  delete currentManual.expansionProgress; delete currentManual.aiReviewQueue; delete baselineManual.expansionProgress; delete baselineManual.aiReviewQueue;
+  delete currentManual.expansionProgress; delete currentManual.aiReviewQueue; delete currentManual.aiReviewDemand; delete baselineManual.expansionProgress; delete baselineManual.aiReviewQueue; delete baselineManual.aiReviewDemand;
   assert.deepEqual(currentManual, baselineManual, 'ordinary SQL reward matches original source baseline');
   assert.deepEqual(manual.state().expansionProgress, progress('pilot_ready'), 'manual cannot advance pilot');
   assisted.action('completeSQLPilotQuery', attempt);
   assert.deepEqual(assisted.state().expansionProgress, progress('pilot_success'));
   const actual = assisted.state(), expected = manual.state();
-  delete actual.expansionProgress; delete actual.aiReviewQueue; delete expected.expansionProgress; delete expected.aiReviewQueue;
+  delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand;
   assert.deepEqual(actual, expected, 'manual/assisted rewards and meeting contributions are identical');
   assert.equal(actual.cleanData - initial.cleanData, 100 * (1 + level * 0.1));
   assert.equal(actual.pu - initial.pu, 250 * (1 + level * 0.1));
@@ -197,7 +198,7 @@ for (const interaction of ['blocking task', 'OMNISCIENCE']) {
   assisted.action('completeSQLPilotQuery', attempt);
   assert.deepEqual(assisted.state().expansionProgress, progress('pilot_success'));
   const actual = assisted.state(), expected = manual.state();
-  delete actual.expansionProgress; delete actual.aiReviewQueue; delete expected.expansionProgress; delete expected.aiReviewQueue;
+  delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand;
   assert.deepEqual(actual, expected, 'already-executed completion follows original reward behavior during ' + interaction);
   assert.equal(assisted.presentation().available, false, 'feedback deferred during ' + interaction);
   if (interaction === 'OMNISCIENCE') {
@@ -221,7 +222,7 @@ const feedback = mount({ ...eligibleSeed, expansionProgress: progress('pilot_suc
 const feedbackBefore = feedback.state();
 feedback.action('advancePilotIntroduction', 'pilot_success');
 assert.deepEqual(feedback.state().expansionProgress, progress('demand_pending'));
-const feedbackAfter = feedback.state(); delete feedbackBefore.expansionProgress; delete feedbackBefore.aiReviewQueue; delete feedbackAfter.expansionProgress; delete feedbackAfter.aiReviewQueue;
+const feedbackAfter = feedback.state(); delete feedbackBefore.expansionProgress; delete feedbackBefore.aiReviewQueue; delete feedbackBefore.aiReviewDemand; delete feedbackAfter.expansionProgress; delete feedbackAfter.aiReviewQueue; delete feedbackAfter.aiReviewDemand;
 assert.deepEqual(feedbackAfter, feedbackBefore, 'management response adds no demand/rewards');
 assert.deepEqual(mount(feedback.save()).state().expansionProgress, progress('demand_pending'));
 compareTicks({ ...eligibleSeed, expansionProgress: progress('demand_pending') });
@@ -322,17 +323,19 @@ for (let i = 0; i < 6; i++) {
 assert.deepEqual(finalWave.state().aiReviewQueue, { pending: 0, completed: 6, wave: 2 });
 finalWave.action('openNextAIReview'); assert.equal(finalWave.queueAttempt(), null);
 assert.equal(finalWave.state().expansionProgress.era, 'ai_pilot', 'no acceleration or regeneration');
+assert.deepEqual(finalWave.state().expansionProgress.transition, { targetEra: 'acceleration', step: 'continuous_demand_offer' });
+assert.equal(finalWave.state().aiReviewDemand.active, false, 'second wave stays finite until explicit acknowledgement');
 const baselineProgress = { era: 'analyst', transition: null };
 for (const tu of [99, 100, 135]) {
   const seed = { tu, pu: 10000, prestige: { level: 2, currency: 7 }, expansionProgress: baselineProgress };
   const current = mount(seed), original = mount(seed, true);
   assert.equal(current.deferred(), false);
   for (const game of [current, original]) game.purchase('project_omniscience');
-  const actual = current.state(), expected = original.state(); delete actual.aiReviewQueue; delete expected.aiReviewQueue;
+  const actual = current.state(), expected = original.state(); delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete expected.aiReviewQueue; delete expected.aiReviewDemand;
   assert.deepEqual(actual, expected, 'baseline purchase/cost/flag/log matches original at TU ' + tu);
   if (tu < 100) continue;
   for (const game of [current, original]) { game.action('ascend'); assert.equal(game.rebooting(), true); game.timeout(3000); }
-  const currentNG = current.saved(), originalNG = original.saved(); delete currentNG.expansionProgress; delete currentNG.aiReviewQueue; delete originalNG.expansionProgress; delete originalNG.aiReviewQueue;
+  const currentNG = current.saved(), originalNG = original.saved(); delete currentNG.expansionProgress; delete currentNG.aiReviewQueue; delete currentNG.aiReviewDemand; delete originalNG.expansionProgress; delete originalNG.aiReviewQueue; delete originalNG.aiReviewDemand;
   assert.deepEqual(currentNG, originalNG, 'baseline NG+ reset and prestige match original');
   assert.equal(current.reloads(), original.reloads());
 }
@@ -358,4 +361,101 @@ openMixed.action('ascend'); assert.equal(openMixed.rebooting(), true, 'older ope
 const reset = mount({ expansionProgress: { era: 'ai_pilot', transition: null }, aiReviewQueue: { pending: 6, completed: 0, wave: 2 } });
 reset.action('hardReset'); assert.equal(reset.rebooting(), true); reset.timeout(2000);
 assert.equal(reset.saved(), null); assert.equal(reset.reloads(), 1, 'factory reset remains available during expansion');
-console.log('PASS: S1-S3 regression and G1 baseline purchase/NG+/sandbox equivalence, already-open ending/handoff, all-era deferral, side-effect-free purchase/direct reset guards, gate reload, factory reset, queue/reward preservation. Hooks/timers are stubbed; Chromium covers UI.');
+const inactiveDemand = { active: false, arrivalIntervalTicks: 40, nextArrivalTick: 0, totalArrived: 0, totalCompleted: 0 };
+assert.deepEqual(mount().state().aiReviewDemand, inactiveDemand);
+assert.deepEqual(mount({ pu: 1e12, tu: 1e9, prestige: { level: 999 }, aiReviewDemand: {} }).state().aiReviewDemand, inactiveDemand);
+assert.deepEqual(mount({ aiReviewDemand: { active: 'true', arrivalIntervalTicks: 0, nextArrivalTick: -1, totalArrived: '3', totalCompleted: 1.5 } }).state().aiReviewDemand, inactiveDemand);
+const offerSeed = { ...finalWave.save(), tick: 500, rawDataRate: 0, cleanDataRate: 0, metricRate: 0 };
+const offered = mount(offerSeed);
+assert.equal(offered.operational().offered, true);
+for (let i = 0; i < 80; i++) offered.tick();
+assert.deepEqual(offered.state().aiReviewDemand, inactiveDemand);
+assert.deepEqual(offered.state().aiReviewQueue, { pending: 0, completed: 6, wave: 2 });
+assert.equal(mount(offered.save()).operational().offered, true);
+const oldCleared = mount({ ...offerSeed, expansionProgress: { era: 'ai_pilot', transition: null } });
+assert.equal(oldCleared.operational().offered, true, 'cleared pre-S4 queue resumes at offer, not new six');
+for (const blocker of [{ sqlMode: true }, { boardMeeting: { active: true } }, { blockingTask: { name: 'Busy' } }, { coffeeBreak: { active: true } }, { isAscending: true }]) {
+  const blocked = mount({ ...offerSeed, ...blocker }); const before = blocked.state();
+  blocked.action('acknowledgeOperationalRollout'); assert.deepEqual(blocked.state(), before);
+}
+offered.action('acknowledgeOperationalRollout');
+const activeSeed = offered.save();
+assert.deepEqual(activeSeed.aiReviewQueue, { pending: 4, completed: 0, wave: 3 });
+assert.deepEqual(activeSeed.aiReviewDemand, { ...inactiveDemand, active: true, nextArrivalTick: activeSeed.tick + 40 });
+assert.deepEqual(activeSeed.expansionProgress, { era: 'ai_pilot', transition: { targetEra: 'acceleration', step: 'continuous_demand_active' } });
+const once = offered.state(); offered.action('acknowledgeOperationalRollout'); assert.deepEqual(offered.state(), once);
+offered.action('establishExpansionEra', 'acceleration'); assert.deepEqual(offered.state(), once);
+for (let i = 0; i < 39; i++) offered.tick();
+assert.equal(offered.state().aiReviewQueue.pending, 4);
+const partialSchedule = mount(offered.save()); partialSchedule.tick();
+assert.equal(partialSchedule.state().aiReviewQueue.pending, 5);
+assert.equal(partialSchedule.state().aiReviewDemand.totalArrived, 1);
+const afterArrival = mount(partialSchedule.save()); afterArrival.tick();
+assert.equal(afterArrival.state().aiReviewDemand.totalArrived, 1, 'reload does not duplicate arrival');
+const overdue = mount({ ...activeSeed, tick: activeSeed.aiReviewDemand.nextArrivalTick + 400 });
+overdue.tick(); assert.equal(overdue.state().aiReviewDemand.totalArrived, 1, 'overdue schedule never catches up missed intervals');
+assert.equal(overdue.state().aiReviewDemand.nextArrivalTick, overdue.state().tick + 40);
+overdue.tick(); assert.equal(overdue.state().aiReviewDemand.totalArrived, 1);
+const flow = mount(activeSeed); flow.action('openNextAIReview'); const flowId = flow.queueAttempt();
+for (let i = 0; i < 40; i++) flow.tick();
+assert.equal(flow.state().sqlMode, true); assert.equal(flow.state().aiReviewQueue.pending, 5, 'arrival while reviewing');
+const reference = mount(flow.state()); reference.action('completeSQLQuery', 100, 250);
+flow.action('completeAIReviewQuery', flowId);
+assert.equal(flow.state().aiReviewQueue.pending, 4); assert.equal(flow.state().aiReviewDemand.totalCompleted, 1);
+assert.equal(flow.state().cleanData, reference.state().cleanData); assert.equal(flow.state().pu, reference.state().pu);
+const paidFlow = flow.state(); flow.action('completeAIReviewQuery', flowId); assert.deepEqual(flow.state(), paidFlow);
+flow.action('toggleSQLMode'); for (let i = 0; i < 40; i++) flow.tick();
+assert.equal(flow.state().aiReviewQueue.pending, 5, 'flow replenishes again');
+const queueBeforeManual = flow.state().aiReviewQueue, demandBeforeManual = flow.state().aiReviewDemand;
+flow.action('completeSQLQuery', 100, 250);
+assert.deepEqual(flow.state().aiReviewQueue, queueBeforeManual); assert.deepEqual(flow.state().aiReviewDemand, demandBeforeManual);
+const arrivalOnly = mount(activeSeed);
+for (let i = 0; i < 120; i++) arrivalOnly.tick();
+assert.equal(arrivalOnly.state().aiReviewDemand.totalArrived, 3);
+assert.equal(arrivalOnly.state().expansionProgress.transition.step, 'continuous_demand_active');
+const completionOnly = mount(activeSeed);
+for (let i = 0; i < 3; i++) {
+  completionOnly.action('openNextAIReview'); completionOnly.action('completeAIReviewQuery', completionOnly.queueAttempt()); completionOnly.action('toggleSQLMode');
+}
+assert.equal(completionOnly.state().aiReviewDemand.totalCompleted, 3);
+assert.equal(completionOnly.state().expansionProgress.transition.step, 'continuous_demand_active');
+for (let i = 0; i < 120; i++) completionOnly.tick();
+assert.deepEqual(completionOnly.state().expansionProgress, { era: 'ai_pilot', transition: { targetEra: 'acceleration', step: 'pressure_visible' } });
+for (let i = 0; i < 3; i++) {
+  arrivalOnly.action('openNextAIReview'); arrivalOnly.action('completeAIReviewQuery', arrivalOnly.queueAttempt()); arrivalOnly.action('toggleSQLMode');
+}
+assert.equal(arrivalOnly.state().expansionProgress.transition.step, 'pressure_visible', 'proof works whichever counter reaches three last');
+const demandReload = mount(completionOnly.save());
+assert.deepEqual(demandReload.state().aiReviewDemand, completionOnly.state().aiReviewDemand);
+assert.deepEqual(demandReload.state().aiReviewQueue, completionOnly.state().aiReviewQueue);
+assert.deepEqual(demandReload.state().expansionProgress, completionOnly.state().expansionProgress);
+const capSeed = { ...activeSeed, aiReviewQueue: { pending: 12, completed: 0, wave: 3 }, aiReviewDemand: { ...activeSeed.aiReviewDemand, nextArrivalTick: activeSeed.tick + 1 } };
+const capped = mount(capSeed), ordinary = mount({ ...capSeed, aiReviewDemand: inactiveDemand });
+for (let i = 0; i < 81; i++) { capped.tick(); ordinary.tick(); }
+assert.equal(capped.state().aiReviewQueue.pending, 12); assert.equal(capped.state().aiReviewDemand.totalArrived, 0);
+const cappedState = capped.state(), ordinaryState = ordinary.state(); delete cappedState.aiReviewDemand; delete ordinaryState.aiReviewDemand;
+assert.deepEqual(cappedState, ordinaryState, 'full queue adds no penalty, output, resource or entropy changes');
+for (const paused of [mount({ ...activeSeed, isAscending: true }), mount(activeSeed)]) {
+  if (!paused.state().isAscending) paused.action('hardReset');
+  const before = paused.state(); for (let i = 0; i < 80; i++) paused.tick(); assert.deepEqual(paused.state(), before, 'existing global pause stops arrivals');
+}
+for (const ordinaryActivity of [{ sqlMode: true }, { coffeeBreak: { active: true } }, { pdfMode: true }]) {
+  const busy = mount({ ...activeSeed, ...ordinaryActivity }); for (let i = 0; i < 40; i++) busy.tick(); assert.equal(busy.state().aiReviewDemand.totalArrived, 1);
+}
+const draft = mount(activeSeed); draft.action('openNextAIReview'); const lostID = draft.queueAttempt();
+const restoredDraft = mount(draft.save()), unchanged = restoredDraft.state();
+restoredDraft.action('completeAIReviewQuery', lostID); assert.deepEqual(restoredDraft.state(), unchanged);
+assert.equal(demandReload.deferred(), true); const beforeGate = demandReload.state(); demandReload.purchase('project_omniscience'); demandReload.action('ascend'); assert.deepEqual(demandReload.state(), beforeGate);
+for (const level of [0, 3]) {
+  const review = mount({ ...activeSeed, prestige: { level }, tick: 300 });
+  review.action('openNextAIReview'); const id = review.queueAttempt(); review.tick();
+  assert.equal(review.state().boardMeeting.active, true);
+  const before = review.state(), manual = mount(before); manual.action('completeSQLQuery', 100, 250);
+  review.action('completeAIReviewQuery', id);
+  assert.equal(review.state().cleanData - before.cleanData, 100 * (1 + level * .1));
+  assert.equal(review.state().pu - before.pu, 250 * (1 + level * .1));
+  const actual = review.state(), expected = manual.state();
+  for (const field of ['expansionProgress', 'aiReviewQueue', 'aiReviewDemand']) { delete actual[field]; delete expected[field]; }
+  assert.deepEqual(actual, expected, 'continuous reward/log/meeting contribution identical to ordinary SQL at prestige ' + level);
+}
+console.log('PASS: S0-S3/G1 regression plus S4 finite offer/acknowledgement, deterministic schedule/cap, active-review arrivals, manual isolation, rewards, counters/proof in both orders, save/reload/draft guards, global pauses and Ascension deferral. Hooks/timers are stubbed; Chromium covers actual UI.');
