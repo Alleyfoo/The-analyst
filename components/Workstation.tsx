@@ -263,7 +263,7 @@ export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManua
                                 className="w-full p-3 bg-gradient-to-r from-indigo-900/50 to-purple-900/50 border border-indigo-500/30 rounded flex items-center justify-center gap-2 hover:from-indigo-900 hover:to-purple-900 transition-all group"
                             >
                                 <Wand2 size={16} className="text-purple-400 group-hover:rotate-12 transition-transform" />
-                                <span className="text-sm font-bold text-indigo-200">Manual Deep Clean (Spaghetti Mode)</span>
+                                <span className="text-sm font-bold text-indigo-200">Manual Data Cleanup (Spaghetti)</span>
                             </button>
                         )}
                         

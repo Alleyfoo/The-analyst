@@ -95,11 +95,11 @@ Ads (`launchCampaign`, `boostCampaign`) are available without an unlock: email/s
 
 ## Every minigame
 
-All reward actions below live in `hooks/useGameEngine.ts`; wiring is in `App.tsx`. Except Buzzword, clean/metric/PU/TU rewards listed here are multiplied by M; costs, quality and entropy changes are not. Games do not pause the main loop. Closing before reward/claim generally yields nothing, except already-paid Spaghetti batches; uncancelled completion timers are a caveat.
+All reward actions below live in `hooks/useGameEngine.ts`; wiring is in `App.tsx`. Except Buzzword, clean/metric/PU/TU rewards listed here are multiplied by M; costs, quality and entropy changes are not. Games do not pause the main loop. Closing before reward/claim generally yields nothing, except already-paid Spaghetti records; uncancelled completion timers are a caveat.
 
 | Component / gate | Real play and result | Engine consequence / meeting progress |
 | --- | --- | --- |
-| `SpaghettiOverlay::handleInput`; manual_excel | Hover near curve midpoints; local budget requires >=7 raw per next strand | `cleanSpaghettiStrand`: spends 5 raw/strand, +5 clean, +25 PU; PU reward counts for meeting |
+| `SpaghettiOverlay::CleanupSession`; manual_excel | Normalize six dirty values by clicking one of three typed candidates per record; target rule is shown. Wrong choices give local feedback only; correct choices pay immediately once. Requires >=5 available Raw | `cleanSpaghettiStrand` unchanged: spends 5 raw/record, +5 clean*M, +25 PU*M; PU reward counts for meeting; no batch bonus |
 | `PandasMappingGame` completion effect; pandas_scripts | Match five random header pairs; after 1.5s, cost 20 raw, reward 50 clean, quality `max(0.01,0.05-0.01*mistakes)` | `completePandasLevel` rejects whole reward if raw <20 at completion, clamps quality to 1; no meeting contribution |
 | `SQLMiningGame::handleExecute`; sql_optimization | Build one exact token sequence; errors have no resource penalty; success after 1.5s | `completeSQLQuery`: free +100 clean/+250 PU; PU counts for meeting |
 | `ModelTrainingGame::handleDeploy`; data_scientist (unreachable ordinarily) | Slider fits generated training/validation data. PU `floor(trainingAccuracy*25)`; accuracy/generalization gap >30: TU -20/entropy +10; >15: TU 0/entropy +5; else accuracy <50: TU 0/entropy 0; otherwise TU `floor(generalization)`/entropy -5 | `completeModelTraining`: always models +1, grants PU/TU with TU floor zero and entropy clamp 0..100; PU counts for meeting; no input cost |
@@ -122,3 +122,14 @@ The pinned expected process is RECEIVED → VALIDATE → ENRICH → APPROVE → 
 | Catalogue enrichment | ENRICH (81) | ENRICH → PUBLISH, skipping APPROVE |
 
 Both local selections are required to submit. The immediate result shows chosen and observed answers with a short evidence explanation; submission pays nothing and does not permit repeated guessing. Only COMPLETE ANALYSIS calls `onComplete(metricsReward, tuReward)` once and closes. Closing before claiming pays nothing. The active wrapper unmounts the local round on close; reopening recreates scenario, selections, result and claim guard. No board is saved, and there are no local timers, animation loops or delayed callbacks. The central simulation still continues. Prestige, meeting contribution and logging remain in the unchanged `useGameEngine::completeMiningLevel`.
+
+
+## Manual Data Cleanup / Spaghetti rewrite — P3
+
+Evidence: `components/SpaghettiOverlay.tsx::CASES` / `CleanupSession`, `Workstation::canManualClean`, and unchanged `useGameEngine::cleanSpaghettiStrand`. The workstation labels the existing Spreadsheet Software-gated activity **Manual Data Cleanup (Spaghetti)**. It operates on individual values; `PandasMappingGame` still maps source headers to target schema fields.
+
+Twelve authored cases form two alternating six-record batches; the first batch is randomly selected. Each card exposes record ID, field, quoted raw value, explicit target rule and three typed choices (quoted strings differ from numbers/booleans). Rules are outer-space trimming, centimetre suffix removal into a number, yes/no into boolean, explicitly approved colour aliases, decimal-comma conversion and uppercase country codes. All transformations have supplied rules; none guesses missing knowledge. These cases do not import or grant ProductWritePolicy authority.
+
+A wrong choice leaves the record dirty and gives DOES NOT MATCH TARGET FORMAT, with no resource/quality/entropy change. A correct choice reserves five Raw locally before sending `onClean(5,5,25)` once, straightens the colourful tangled connection to green and shows the normalized value. Less than five available Raw gives INSUFFICIENT RAW DATA without cleaning or payout. The ref reservation prevents multiple rapid clicks from spending the same unreflected prop balance; authoritative engine affordability remains unchanged.
+
+Six cleaned records show BATCH CLEAN and explicit LOAD ANOTHER BATCH / CLOSE. A batch costs at most 30 Raw and grants 30 base Clean/150 base PU; no completion bonus. Session count spans loaded batches, while wrong feedback and cleaned flags reset. Closing keeps already-paid rewards and grants nothing additional. The inactive wrapper unmounts all local state; reopening starts fresh. SVG/Framer animation is cosmetic only; there is no gameplay scheduler, canvas, hover hit detection or automatic spawn. Main simulation still runs.

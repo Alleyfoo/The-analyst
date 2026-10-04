@@ -79,3 +79,16 @@ Isolated Chromium checks solve all three scenarios from displayed traces/waits t
 ### Build/tooling and remaining suspicions
 
 Build and TypeScript check pass. Existing missing `/index.css` and large-chunk warnings remain. No new runtime issue was observed within this scope. Other minigame lifecycle suspicions remain unmodified and unreproduced by P2.
+
+
+## Playtest correction P3 — Spaghetti value normalization (2026-10-04)
+
+### Confirmed clarity issue, corrected
+
+User playtesting found the anonymous corrupt-stream curves and invisible midpoint hover did not communicate what data was dirty or what cleaning changed. `SpaghettiOverlay::CleanupSession` replaces that interaction with six visible values and explicit target rules. Tangled colourful record connections straighten to green only on correct normalization. Twelve fixed safe cases form two batches; values remain separate from the unchanged Pandas header-mapping activity. The original >=7 Raw UI margin is replaced with the exact >=5 contract and a synchronous local reservation against rapid clicks. Engine cost/reward/meeting/prestige logic is unchanged.
+
+### Scoped validation
+
+`scripts/check-spaghetti-cleaning.cjs` checks twelve unambiguous normalizations, two six-record batches, wrong/no-payout feedback, once-only5/5/25 callbacks, no bonus, exact-five/insufficient/refilled Raw and rapid-click protection, stale/closed handlers, fresh rounds and no gameplay scheduler. It verifies Pandas source unchanged and the original engine reward block unchanged, including level0/3 scaling, meeting contribution and insufficient-Raw rejection.
+
+Isolated Chromium solves two batches from visible raw values/target hints at 1920×1080,1280×800,1024×768; validates the Spreadsheet Software gate, resource outcomes, visible straight-green clean state, all six rows and bottom actions, explicit loading, fresh close/reopen and exact-five rapid clicks. Screenshots are visually inspected. No new runtime/console error was observed; build/typecheck pass with existing missing `/index.css` and large-chunk warnings. Other minigame lifecycle suspicions remain unchanged. The central engine's previously documented tick snapshot boundary is not redesigned by this UI pass.
