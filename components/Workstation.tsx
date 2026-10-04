@@ -132,7 +132,7 @@ export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManua
       { id: UpgradeCategory.Governance, icon: Scale, label: "Governance" },
       { id: UpgradeCategory.Scientific, icon: FlaskConical, label: "R&D" },
       { id: UpgradeCategory.Neural, icon: Brain, label: "Neural Link" }, // Prestige category
-      { id: UpgradeCategory.Endgame, icon: InfinityIcon, label: "Singularity" },
+      { id: UpgradeCategory.Endgame, icon: InfinityIcon, label: "Omniscience" },
   ];
 
   const market = state.market;
@@ -171,8 +171,8 @@ export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManua
                                  <InfinityIcon size={24} className="text-purple-400" />
                              </div>
                              <div>
-                                 <div className="text-purple-300 text-sm font-bold uppercase tracking-wider">{postGovernNewGameAvailable ? 'GOVERNANCE ROLE COMPLETE' : ascensionDeferred ? 'ASCENSION DEFERRED' : 'Ascension Available'}</div>
-                                 <div className="text-slate-300 text-xs">{postGovernNewGameAvailable ? 'NEW GAME+ AVAILABLE' : ascensionDeferred ? 'ORGANISATIONAL TRANSFORMATION IN PROGRESS' : 'Singularity threshold reached. Reset simulation for permanent power.'}</div>
+                                 <div className="text-purple-300 text-sm font-bold uppercase tracking-wider">{postGovernNewGameAvailable ? 'GOVERNANCE ROLE COMPLETE' : ascensionDeferred ? 'ASCENSION DEFERRED' : 'PROJECT: OMNISCIENCE'}</div>
+                                 <div className="text-slate-300 text-xs">{postGovernNewGameAvailable ? 'NEW GAME+ AVAILABLE' : ascensionDeferred ? 'ORGANISATIONAL TRANSFORMATION IN PROGRESS' : 'Deployment ready. Your work is complete.'}</div>
                              </div>
                          </div>
                          <button 
@@ -181,7 +181,7 @@ export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManua
                             onClick={() => postGovernNewGameAvailable ? onGovernNewGame() : onBuyUpgrade(UPGRADES.find(u => u.id === 'project_omniscience')!)}
                             className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded shadow-lg transition-transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                          >
-                             {postGovernNewGameAvailable ? 'NEW GAME+' : ascensionDeferred ? 'DEFERRED' : 'ASCEND'}
+                             {postGovernNewGameAvailable ? 'NEW GAME+' : ascensionDeferred ? 'DEFERRED' : 'DEPLOY'}
                          </button>
                     </motion.div>
                 )}

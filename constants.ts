@@ -560,7 +560,7 @@ export const UPGRADES: Upgrade[] = [
   {
     id: 'project_omniscience',
     name: 'Project: OMNISCIENCE',
-    description: 'Merge consciousness with the data stream. The final step.',
+    description: 'Complete deployment. There is nothing left for you to do.',
     category: UpgradeCategory.Endgame,
     cost: { resource: 'TU', amount: 100 }, // High TU Requirement
     effect: (state) => ({ isAscending: true }), // Triggers ending

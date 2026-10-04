@@ -55,3 +55,8 @@ A second interval writes `JSON.stringify(stateRef.current)` every two seconds un
 ## Desktop layout correction — current presentation (2026-10-04)
 
 `App.tsx` retains the 3/5/4 grid but now composes compact `DataStream`, `WorkstationNavigation` and selected `Workstation` content in the left column. `OperationsStatus` presents the existing expansion/status JSX in the center, independently scrollable; `DashboardPanel` remains on the right unchanged. App owns the single local `activeWorkstationTab`; navigation and content share it. Tab scrolls use bounded flex/absolute containers with min-h-0, and narrow-column controls stack responsively. No engine, guard, reward, timer or persistence change accompanies this extraction. Topbar z20/main grid z10/modal z50 ordering is retained.
+
+
+## Original Omniscience finale — current presentation (2026-10-04)
+
+`App` now passes only `active={state.isAscending}` to `AscensionOverlay`. Its inner `OmniscienceFinale` presents authored deployment status/book copy and one READ button, then THE ANALYST COMPLETE. It has no timer, automatic close, reward, reset or engine callback. READ is local/unsaved; inactive unmounts the finale and reload of a saved `isAscending` ending shows READ again. The main-loop pause and original purchase/G1 authority remain unchanged. Legacy engine `ascend`/`cancelAscension` are retained but no longer presented here. `ExpansionEnding`/`AccessMatrix` and their dedicated confirmed NG+ are separate and unchanged. Earlier descriptions of original-screen NG+/Sandbox choices are historical.

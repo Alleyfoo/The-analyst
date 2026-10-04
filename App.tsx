@@ -99,12 +99,7 @@ const App: React.FC = () => {
       <TaskBusyOverlay task={state.blockingTask} currentTick={state.tick} />
 
       {/* Endgame Overlay */}
-      <AscensionOverlay 
-          active={state.isAscending} 
-          state={state} 
-          onAscend={actions.ascend} 
-          onStay={actions.cancelAscension} 
-      />
+      <AscensionOverlay active={state.isAscending} />
       
       {/* Coffee Break Overlay */}
       <CoffeeBreakOverlay 

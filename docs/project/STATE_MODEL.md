@@ -438,3 +438,8 @@ Ordinary `ascend`, AscensionOverlay, G1 and factory reset are unchanged. Govern 
 ## Desktop layout correction — local UI ownership (2026-10-04)
 
 `activeWorkstationTab` now lives in `App`, using `WorkstationTab` from `WorkstationNavigation`; it remains unsaved local UI state, default ops on reload. `Workstation` receives the selected tab and retains existing terminal autoscroll/floating feedback. `OperationsStatus` is presentation-only and receives the same authoritative state, availability guards and callbacks previously rendered above the tabs. No new persistent field/storage key or simulation state is added.
+
+
+## Original ending presentation supersession (2026-10-04)
+
+The user explicitly replaced the original `AscensionOverlay`, leaving later expansion ending/NG+ unchanged. `isAscending` remains the persisted entry/loop-pause flag with its existing hydration. `OmniscienceFinale::reading` is local boolean false→true on READ, never saved and no central completion/progression/reward state is added. Inactive unmounts it; reload of a saved ending returns to deployment/READ. App no longer wires `ascend` or `cancelAscension` to the original overlay. The old actions/formula remain in the engine; all earlier statements about current original-screen NG+/Sandbox controls (including mixed legacy saves) are superseded by this section. G1 deferral and dedicated expansion role/solved-governance NG+ remain unchanged. Deployment statuses/zero pending tasks are scripted ending copy, not mutation of queues, monitoring or write-policy authority.
