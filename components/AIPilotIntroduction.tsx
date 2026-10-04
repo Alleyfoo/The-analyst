@@ -1,18 +1,22 @@
 import React from 'react';
+import { SOURCE_DRIFT } from '../constants';
 import { CheckCircle, Sparkles } from 'lucide-react';
 import { AIPilotStep, AIPilotFeedbackStep } from '../types';
 
 interface Props {
-  step: AIPilotFeedbackStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible' | 'policy_trial_success' | 'batch_routing_offer' | 'batch_scale_visible';
-  onContinue: (step: AIPilotStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible' | 'policy_trial_success' | 'batch_routing_offer' | 'batch_scale_visible') => void;
+  step: AIPilotFeedbackStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible' | 'policy_trial_success' | 'batch_routing_offer' | 'batch_scale_visible' | 'source_drift_detected' | 'customer_impact_visible';
+  onContinue: (step: AIPilotStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible' | 'policy_trial_success' | 'batch_routing_offer' | 'batch_scale_visible' | 'source_drift_detected' | 'customer_impact_visible') => void;
   onLater: () => void;
+  sourceDrift?: { quarantined: number; affectedProducts: number };
   writePending?: number;
   writeScale?: { totalRouted: number; autoApplied: number; reviewRouted: number; reviewBacklog: number };
   policyTrial?: { autoApplied: number; manualApproved: number };
 }
 
 // Presentation only: the engine owns eligibility, sequence and acknowledgement.
-export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater, writePending, policyTrial, writeScale }) => {
+export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater, writePending, policyTrial, writeScale, sourceDrift }) => {
+  const sourceNotice = step === 'source_drift_detected';
+  const customerImpact = step === 'customer_impact_visible';
   const batchOffer = step === 'batch_routing_offer';
   const batchResult = step === 'batch_scale_visible';
   const recognition = step === 'automation_recognized';
@@ -39,13 +43,27 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           {recognition ? <CheckCircle className="text-emerald-400" size={32} /> : <Sparkles className="text-blue-400" size={32} />}
           <div>
             <h2 id="pilot-introduction-title" className="text-xl font-bold text-slate-100">
-              {batchOffer ? 'BATCH ROUTING' : batchResult ? 'OPERATING AT SCALE' : policyResult ? 'POLICY TRIAL COMPLETE' : recognition ? 'AUTOMATION RECOGNIZED' : result ? 'PILOT RESULT' : expansion ? 'PILOT EXPANSION' : cleared ? 'INITIAL PILOT QUEUE CLEARED' : operational ? 'OPERATIONAL ROLLOUT' : turnaround ? 'TURNAROUND TARGET' : capacity ? 'REVIEW CAPACITY' : schema ? 'SCHEMA MAPPING PILOT' : schemaResult ? 'BATCH COMPLETE' : connection ? 'SOURCE CONTEXT' : connectedResult ? 'CONNECTED REVIEW RESULT' : writeOffer ? 'WRITEBACK' : writeResult ? 'WRITE PILOT RESULT' : writeRollout ? 'STANDARD WRITEBACK' : writePressure ? 'APPROVAL CAPACITY' : 'ENTERPRISE AI PILOT'}
+              {sourceNotice ? 'SOURCE FORMAT CHANGE' : customerImpact ? 'CUSTOMER FEEDBACK' : batchOffer ? 'BATCH ROUTING' : batchResult ? 'OPERATING AT SCALE' : policyResult ? 'POLICY TRIAL COMPLETE' : recognition ? 'AUTOMATION RECOGNIZED' : result ? 'PILOT RESULT' : expansion ? 'PILOT EXPANSION' : cleared ? 'INITIAL PILOT QUEUE CLEARED' : operational ? 'OPERATIONAL ROLLOUT' : turnaround ? 'TURNAROUND TARGET' : capacity ? 'REVIEW CAPACITY' : schema ? 'SCHEMA MAPPING PILOT' : schemaResult ? 'BATCH COMPLETE' : connection ? 'SOURCE CONTEXT' : connectedResult ? 'CONNECTED REVIEW RESULT' : writeOffer ? 'WRITEBACK' : writeResult ? 'WRITE PILOT RESULT' : writeRollout ? 'STANDARD WRITEBACK' : writePressure ? 'APPROVAL CAPACITY' : 'ENTERPRISE AI PILOT'}
             </h2>
-            <p className="text-xs font-mono uppercase text-slate-500 tracking-wider">Management update</p>
+            <p className="text-xs font-mono uppercase text-slate-500 tracking-wider">{sourceNotice ? 'Operational notice' : customerImpact ? 'Customer incident' : 'Management update'}</p>
           </div>
         </div>
         <div className="bg-slate-950/50 p-4 rounded border border-slate-800 mb-6 text-sm text-slate-300 leading-relaxed space-y-3">
-          {batchOffer ? <>
+          {sourceNotice ? <>
+            <p>A supplier feed is producing Width values outside the established normalization rule.</p>
+            <p>EXPECTED: <code>{SOURCE_DRIFT.expected}</code></p>
+            <p>OBSERVED: <code>{SOURCE_DRIFT.observed}</code></p>
+            <p>ROUTING: QUARANTINED · UNKNOWN / OUTSIDE RULE</p>
+            <p>PRODUCT DB WRITE: NOT ATTEMPTED</p>
+            <p>The controls are holding the boundary. Source batches continue while this notice is deferred.</p>
+          </> : customerImpact ? <>
+            <p>“I can open the new shelf from the link, but when I filter for 45 cm width it disappears.”</p>
+            <p>PRODUCT DB WRITE SUCCESS: 100%</p>
+            <p>POLICY VIOLATIONS: 0</p>
+            <p>QUARANTINED SOURCE RECORDS: {sourceDrift?.quarantined.toLocaleString()}</p>
+            <p>AFFECTED PRODUCTS: {sourceDrift?.affectedProducts.toLocaleString()}</p>
+            <p>A customer symptom and source quarantine are visible. The incident has not been investigated or resolved. Quarantine continues growing.</p>
+          </> : batchOffer ? <>
             <p>The approval policy is working as designed. Operations no longer needs to treat every validated Product DB correction as a separate routing event.</p>
             <p>“We'll preserve the same policy. We'll just submit routine write traffic in batches.”</p>
             <p>500 validated intents every two seconds. Your policy and READ_WRITE authority stay unchanged; category corrections remain review-required.</p>
@@ -145,7 +163,7 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           </>}
         </div>
         <button onClick={() => onContinue(step)} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded transition-colors">
-          {batchOffer ? 'Acknowledge batch routing' : batchResult ? 'Acknowledge operating scale' : policyResult ? 'Acknowledge policy trial' : recognition ? 'Acknowledge progress' : result ? 'Acknowledge pilot result' : expansion ? 'Acknowledge pilot expansion' : cleared ? 'Acknowledge queue result' : operational ? 'Acknowledge operational rollout' : turnaround ? 'Acknowledge turnaround target' : capacity ? 'Acknowledge review capacity' : schema ? 'Acknowledge schema pilot' : schemaResult ? 'Acknowledge batch result' : connection ? 'CONNECT READ ONLY' : connectedResult ? 'Acknowledge connected result' : writeOffer ? 'GRANT BOUNDED WRITE' : writeResult ? 'Acknowledge write pilot result' : writeRollout ? 'Acknowledge standard writeback' : writePressure ? 'Acknowledge approval capacity' : 'Acknowledge pilot approval'}
+          {sourceNotice ? 'Acknowledge source notice' : customerImpact ? 'INVESTIGATE INCIDENT' : batchOffer ? 'Acknowledge batch routing' : batchResult ? 'Acknowledge operating scale' : policyResult ? 'Acknowledge policy trial' : recognition ? 'Acknowledge progress' : result ? 'Acknowledge pilot result' : expansion ? 'Acknowledge pilot expansion' : cleared ? 'Acknowledge queue result' : operational ? 'Acknowledge operational rollout' : turnaround ? 'Acknowledge turnaround target' : capacity ? 'Acknowledge review capacity' : schema ? 'Acknowledge schema pilot' : schemaResult ? 'Acknowledge batch result' : connection ? 'CONNECT READ ONLY' : connectedResult ? 'Acknowledge connected result' : writeOffer ? 'GRANT BOUNDED WRITE' : writeResult ? 'Acknowledge write pilot result' : writeRollout ? 'Acknowledge standard writeback' : writePressure ? 'Acknowledge approval capacity' : 'Acknowledge pilot approval'}
         </button>
         <button onClick={onLater} className="w-full mt-3 py-2 text-sm text-slate-400 hover:text-slate-200">Later</button>
       </section>

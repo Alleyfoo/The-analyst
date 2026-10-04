@@ -183,6 +183,14 @@ export interface ProductWritePolicy {
   trial: { active: boolean; total: number; autoApplied: number; manualPending: number; manualApproved: number };
 }
 
+export interface SourceDriftIncident {
+  active: boolean;
+  batchesObserved: number;
+  quarantined: number;
+  affectedProducts: number;
+  customerImpactVisible: boolean;
+}
+
 export interface ProductWriteScale {
   active: boolean;
   batchSize: number;
@@ -199,7 +207,7 @@ export interface GameState {
   aiReviewQueue: { pending: number; completed: number; wave: number };
   aiReviewDemand: { active: boolean; arrivalIntervalTicks: number; nextArrivalTick: number; totalArrived: number; totalCompleted: number; acceleratedArrivals: number; acceleratedReviews: number; acceleratedPeakPending: number };
   schemaBatchReview: { introduced: boolean; active: boolean; batchSize: number; autoMapped: number; exceptionsTotal: number; exceptionsResolved: number; batchesCompleted: number };
-  connectedEnterprise: { productWriteScale: ProductWriteScale; productWritePolicy: ProductWritePolicy; productDb: { connected: boolean; access: 'none' | 'read' | 'read_write' }; readUses: number; mappingBatch: { active: boolean; completed: boolean }; writeUses: number; productWriteQueue: { active: boolean; pending: number; completed: number; totalArrived: number; nextArrivalTick: number; arrivalIntervalTicks: number; peakPending: number }; productWritePilot: { active: boolean; pending: number; completed: number; total: number } };
+  connectedEnterprise: { sourceDriftIncident: SourceDriftIncident; productWriteScale: ProductWriteScale; productWritePolicy: ProductWritePolicy; productDb: { connected: boolean; access: 'none' | 'read' | 'read_write' }; readUses: number; mappingBatch: { active: boolean; completed: boolean }; writeUses: number; productWriteQueue: { active: boolean; pending: number; completed: number; totalArrived: number; nextArrivalTick: number; arrivalIntervalTicks: number; peakPending: number }; productWritePilot: { active: boolean; pending: number; completed: number; total: number } };
 
   // Resources
   rawData: number;
@@ -273,7 +281,7 @@ export const INITIAL_STATE: GameState = {
   aiReviewQueue: { pending: 0, completed: 0, wave: 0 },
   aiReviewDemand: { active: false, arrivalIntervalTicks: 40, nextArrivalTick: 0, totalArrived: 0, totalCompleted: 0, acceleratedArrivals: 0, acceleratedReviews: 0, acceleratedPeakPending: 0 },
   schemaBatchReview: { introduced: false, active: false, batchSize: 0, autoMapped: 0, exceptionsTotal: 0, exceptionsResolved: 0, batchesCompleted: 0 },
-  connectedEnterprise: { productWriteScale: { active: false, batchSize: 0, batchesProcessed: 0, totalRouted: 0, autoApplied: 0, reviewRouted: 0, reviewBacklog: 0 }, productWritePolicy: { configured: false, active: false, autoClasses: [], legacyPending: 0, autoAppliedTotal: 0, manualRoutedTotal: 0, manualCompleted: 0, routeSequence: 0, trial: { active: false, total: 0, autoApplied: 0, manualPending: 0, manualApproved: 0 } }, productDb: { connected: false, access: 'none' }, readUses: 0, mappingBatch: { active: false, completed: false }, writeUses: 0, productWriteQueue: { active: false, pending: 0, completed: 0, totalArrived: 0, nextArrivalTick: 0, arrivalIntervalTicks: 0, peakPending: 0 }, productWritePilot: { active: false, pending: 0, completed: 0, total: 0 } },
+  connectedEnterprise: { sourceDriftIncident: { active: false, batchesObserved: 0, quarantined: 0, affectedProducts: 0, customerImpactVisible: false }, productWriteScale: { active: false, batchSize: 0, batchesProcessed: 0, totalRouted: 0, autoApplied: 0, reviewRouted: 0, reviewBacklog: 0 }, productWritePolicy: { configured: false, active: false, autoClasses: [], legacyPending: 0, autoAppliedTotal: 0, manualRoutedTotal: 0, manualCompleted: 0, routeSequence: 0, trial: { active: false, total: 0, autoApplied: 0, manualPending: 0, manualApproved: 0 } }, productDb: { connected: false, access: 'none' }, readUses: 0, mappingBatch: { active: false, completed: false }, writeUses: 0, productWriteQueue: { active: false, pending: 0, completed: 0, totalArrived: 0, nextArrivalTick: 0, arrivalIntervalTicks: 0, peakPending: 0 }, productWritePilot: { active: false, pending: 0, completed: 0, total: 0 } },
   rawData: 100, 
   maxStorage: 500, // Initial cap
   cleanData: 0,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal, PRODUCT_WRITE_BATCH_SIZE } from '../constants';
+import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale, SourceDriftIncident } from '../types';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal, PRODUCT_WRITE_BATCH_SIZE, SOURCE_DRIFT } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -18,6 +18,18 @@ const isSQLPilotReady = (state: GameState) =>
     state.expansionProgress.transition?.targetEra === 'ai_pilot' &&
     state.expansionProgress.transition.step === 'pilot_ready';
 
+const sourceDriftStep = (state: GameState) => state.expansionProgress.era === 'lightspeed' &&
+    state.expansionProgress.transition?.targetEra === 'governance_crisis' ? state.expansionProgress.transition.step : null;
+const isSourceDriftPhase = (state: GameState) =>
+    ['source_drift_detected', 'quarantine_monitoring', 'customer_impact_visible'].includes(sourceDriftStep(state) ?? '') ||
+    (state.expansionProgress.era === 'governance_crisis' && state.expansionProgress.transition === null);
+const isSourceDriftValid = (incident: SourceDriftIncident) => incident.active === true &&
+    ['batchesObserved', 'quarantined', 'affectedProducts'].every(key =>
+      Number.isSafeInteger(incident[key as keyof SourceDriftIncident]) && Number(incident[key as keyof SourceDriftIncident]) >= 0) &&
+    incident.quarantined / SOURCE_DRIFT.recordsPerBatch === incident.batchesObserved &&
+    incident.affectedProducts === incident.quarantined &&
+    incident.customerImpactVisible === (incident.batchesObserved >= SOURCE_DRIFT.impactBatches);
+
 const hasAcceleratedAIReviewDemand = (state: GameState) =>
     (state.expansionProgress.era === 'acceleration' && (state.expansionProgress.transition === null ||
       (state.expansionProgress.transition.targetEra === 'connected_enterprise' &&
@@ -27,7 +39,7 @@ const hasAcceleratedAIReviewDemand = (state: GameState) =>
        ['write_access_offer', 'write_pilot_active', 'write_pilot_success', 'approval_rollout_ready', 'approval_queue_active', 'approval_bottleneck_visible', 'approval_policy_offer', 'policy_trial_active', 'policy_trial_success'].includes(state.expansionProgress.transition.step)))) ||
     (state.expansionProgress.era === 'good_enough' && (state.expansionProgress.transition === null ||
       (state.expansionProgress.transition.targetEra === 'lightspeed' && ['batch_routing_offer', 'batch_routing_active', 'batch_scale_visible'].includes(state.expansionProgress.transition.step)))) ||
-    (state.expansionProgress.era === 'lightspeed' && state.expansionProgress.transition === null) ||
+    ((state.expansionProgress.era === 'lightspeed' && state.expansionProgress.transition === null) || isSourceDriftPhase(state)) ||
     (state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition?.targetEra === 'acceleration' &&
      (state.expansionProgress.transition.step === 'accelerated_routing_active' || state.expansionProgress.transition.step === 'review_bottleneck_visible'));
 
@@ -123,7 +135,7 @@ const reviewClassIndices = (policy: ProductWritePolicy) => PRODUCT_WRITE_CLASSES
 const batchRoutingStep = (state: GameState) => state.expansionProgress.era === 'good_enough' &&
     state.expansionProgress.transition?.targetEra === 'lightspeed' ? state.expansionProgress.transition.step : null;
 const isBatchRoutingPhase = (state: GameState) => ['batch_routing_active', 'batch_scale_visible'].includes(batchRoutingStep(state) ?? '') ||
-    (state.expansionProgress.era === 'lightspeed' && state.expansionProgress.transition === null);
+    ((state.expansionProgress.era === 'lightspeed' && state.expansionProgress.transition === null) || isSourceDriftPhase(state));
 const isProductWriteScaleValid = (state: GameState) => {
     const scale = state.connectedEnterprise.productWriteScale;
     const policy = state.connectedEnterprise.productWritePolicy;
@@ -141,7 +153,7 @@ const isOperationalWritePolicy = (state: GameState) => {
     const scale = state.connectedEnterprise.productWriteScale;
     const phase = (state.expansionProgress.era === 'good_enough' && (state.expansionProgress.transition === null ||
       ['batch_routing_offer', 'batch_routing_active', 'batch_scale_visible'].includes(batchRoutingStep(state) ?? ''))) ||
-      (state.expansionProgress.era === 'lightspeed' && state.expansionProgress.transition === null);
+      ((state.expansionProgress.era === 'lightspeed' && state.expansionProgress.transition === null) || isSourceDriftPhase(state));
     return phase && (isBatchRoutingPhase(state) ? isProductWriteScaleValid(state) : !scale.active && scale.reviewBacklog === 0) &&
       policy.configured && policy.active && !policy.trial.active && policy.trial.total === 5 &&
       policy.trial.autoApplied === policy.autoClasses.length && policy.trial.manualPending === 0 &&
@@ -165,6 +177,13 @@ const isProductWriteQueueActive = (state: GameState) => {
 };
 const isBatchRoutingEligible = (state: GameState) => state.expansionProgress.era === 'good_enough' &&
     state.expansionProgress.transition === null && isProductWriteQueueActive(state) && !state.connectedEnterprise.productWriteScale.active;
+
+const isSourceDriftEligible = (state: GameState) => state.expansionProgress.era === 'lightspeed' &&
+    state.expansionProgress.transition === null && isProductWriteQueueActive(state) && isProductWriteScaleValid(state) &&
+    !state.connectedEnterprise.sourceDriftIncident.active;
+const hasSourceDriftProof = (state: GameState) => isSourceDriftPhase(state) && isProductWriteQueueActive(state) &&
+    isSourceDriftValid(state.connectedEnterprise.sourceDriftIncident) &&
+    state.connectedEnterprise.sourceDriftIncident.batchesObserved <= state.connectedEnterprise.productWriteScale.batchesProcessed;
 
 const policyTrialStep = (state: GameState) => state.expansionProgress.era === 'connected_enterprise' &&
     state.expansionProgress.transition?.targetEra === 'good_enough' ? state.expansionProgress.transition.step : null;
@@ -205,22 +224,32 @@ const arriveProductWrite = (prev: GameState, tick: number): Partial<GameState> =
       const automatic = PRODUCT_WRITE_BATCH_SIZE / PRODUCT_WRITE_CLASSES.length * policy.autoClasses.length;
       const manual = PRODUCT_WRITE_BATCH_SIZE - automatic;
       const loaded = Math.min(manual, PRODUCT_WRITE_QUEUE_CAP - queue.pending);
+      const incident = prev.connectedEnterprise.sourceDriftIncident;
+      const observeDrift = hasSourceDriftProof(prev);
       const additions = [[prev.connectedEnterprise.writeUses, automatic], [policy.autoAppliedTotal, automatic],
         [policy.manualRoutedTotal, manual], [policy.routeSequence, PRODUCT_WRITE_BATCH_SIZE], [queue.totalArrived, manual],
         [scale.batchesProcessed, 1], [scale.totalRouted, PRODUCT_WRITE_BATCH_SIZE], [scale.autoApplied, automatic],
         [scale.reviewRouted, manual], [scale.reviewBacklog, manual - loaded], [tick, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS],
         [queue.pending + queue.completed + scale.reviewBacklog, manual]];
+      if (observeDrift) additions.push([incident.batchesObserved, 1], [incident.quarantined, SOURCE_DRIFT.recordsPerBatch],
+        [incident.affectedProducts, SOURCE_DRIFT.recordsPerBatch]);
       if (!additions.every(([value, increment]) => Number.isSafeInteger(value + increment) && value + increment >= 0)) return {};
       const nextScale = { ...scale, batchesProcessed: scale.batchesProcessed + 1, totalRouted: scale.totalRouted + PRODUCT_WRITE_BATCH_SIZE,
         autoApplied: scale.autoApplied + automatic, reviewRouted: scale.reviewRouted + manual, reviewBacklog: scale.reviewBacklog + manual - loaded };
-      return { connectedEnterprise: { ...prev.connectedEnterprise, productWriteScale: nextScale,
+      const nextIncident = observeDrift ? { ...incident, batchesObserved: incident.batchesObserved + 1,
+        quarantined: incident.quarantined + SOURCE_DRIFT.recordsPerBatch,
+        affectedProducts: incident.affectedProducts + SOURCE_DRIFT.recordsPerBatch,
+        customerImpactVisible: incident.batchesObserved + 1 >= SOURCE_DRIFT.impactBatches } : incident;
+      return { connectedEnterprise: { ...prev.connectedEnterprise, sourceDriftIncident: nextIncident, productWriteScale: nextScale,
         writeUses: prev.connectedEnterprise.writeUses + automatic,
         productWritePolicy: { ...policy, autoAppliedTotal: policy.autoAppliedTotal + automatic, manualRoutedTotal: policy.manualRoutedTotal + manual,
           routeSequence: policy.routeSequence + PRODUCT_WRITE_BATCH_SIZE },
         productWriteQueue: { ...queue, pending: queue.pending + loaded, totalArrived: queue.totalArrived + manual,
           peakPending: Math.max(queue.peakPending, queue.pending + loaded), nextArrivalTick: tick + PRODUCT_WRITE_QUEUE_INTERVAL_TICKS } },
         ...(batchRoutingStep(prev) === 'batch_routing_active' && nextScale.batchesProcessed >= 3 && nextScale.totalRouted >= 1500 ? {
-          expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'lightspeed', step: 'batch_scale_visible' } } } : {}) };
+          expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'lightspeed', step: 'batch_scale_visible' } } } : {}),
+        ...(observeDrift && sourceDriftStep(prev) === 'quarantine_monitoring' && nextIncident.customerImpactVisible ? {
+          expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'governance_crisis', step: 'customer_impact_visible' } } } : {}) };
     }
     if (isOperationalWritePolicy(prev)) {
       const automatic = policy.autoClasses.includes(PRODUCT_WRITE_CLASSES[policy.routeSequence % 5]);
@@ -271,6 +300,12 @@ const hydrateProductWriteScale = (saved: any): ProductWriteScale => {
       totalRouted: saved.totalRouted, autoApplied: saved.autoApplied, reviewRouted: saved.reviewRouted, reviewBacklog: saved.reviewBacklog };
 };
 
+const hydrateSourceDriftIncident = (saved: any): SourceDriftIncident => {
+    if (!saved || !isSourceDriftValid(saved)) return { ...INITIAL_STATE.connectedEnterprise.sourceDriftIncident };
+    return { active: true, batchesObserved: saved.batchesObserved, quarantined: saved.quarantined,
+      affectedProducts: saved.affectedProducts, customerImpactVisible: saved.customerImpactVisible };
+};
+
 const hydrateState = (parsed: any): GameState => {
     const savedWritePilot = parsed.connectedEnterprise?.productWritePilot;
     const validWritePilot = savedWritePilot?.total === 5 && Number.isSafeInteger(savedWritePilot.completed) &&
@@ -282,6 +317,7 @@ const hydrateState = (parsed: any): GameState => {
         ...INITIAL_STATE,
         ...parsed,
         connectedEnterprise: {
+            sourceDriftIncident: hydrateSourceDriftIncident(parsed.connectedEnterprise?.sourceDriftIncident),
             productWriteScale: hydrateProductWriteScale(parsed.connectedEnterprise?.productWriteScale),
             productWritePolicy: hydrateProductWritePolicy(parsed.connectedEnterprise?.productWritePolicy),
             productDb: { connected: parsed.connectedEnterprise?.productDb?.connected === true && ['read', 'read_write'].includes(parsed.connectedEnterprise.productDb.access),
@@ -850,11 +886,14 @@ export const useGameEngine = () => {
           prev.aiReviewQueue.pending !== 0 || prev.aiReviewQueue.completed !== 6 || prev.aiReviewDemand.active)) return prev;
       if (targetEra === 'connected_enterprise' && (prev.expansionProgress.era !== 'acceleration' ||
           prev.schemaBatchReview.batchesCompleted < 2 || step !== 'read_connection_offer')) return prev;
+      if (targetEra === 'governance_crisis' && (!isSourceDriftEligible(prev) || step !== 'source_drift_detected')) return prev;
       if (targetEra === 'lightspeed' && (!isBatchRoutingEligible(prev) || step !== 'batch_routing_offer')) return prev;
       if (targetEra === 'good_enough' && (!isWritePilotEligible(prev) || step !== 'write_access_offer')) return prev;
       return {
         ...prev,
         expansionProgress: { ...prev.expansionProgress, transition: { targetEra, step } },
+        ...(targetEra === 'governance_crisis' ? { connectedEnterprise: { ...prev.connectedEnterprise,
+          sourceDriftIncident: { ...INITIAL_STATE.connectedEnterprise.sourceDriftIncident, active: true } } } : {}),
       };
     });
   }, []);
@@ -863,7 +902,7 @@ export const useGameEngine = () => {
     setState(prev => {
       if (!isExpansionEra(targetEra)) return prev;
       // AI establishment belongs exclusively to the acknowledged first-queue result below.
-      if (targetEra === 'ai_pilot' || targetEra === 'acceleration' || targetEra === 'connected_enterprise' || targetEra === 'good_enough' || targetEra === 'lightspeed') return prev;
+      if (targetEra === 'ai_pilot' || targetEra === 'acceleration' || targetEra === 'connected_enterprise' || targetEra === 'good_enough' || targetEra === 'lightspeed' || targetEra === 'governance_crisis') return prev;
       if (prev.expansionProgress.transition?.targetEra !== targetEra) return prev;
       return {
         ...prev,
@@ -899,6 +938,10 @@ export const useGameEngine = () => {
 
   useEffect(() => {
     if (!state.isAscending && isBatchRoutingEligible(state)) beginExpansionTransition('lightspeed', 'batch_routing_offer');
+  }, [state.isAscending, state.expansionProgress, state.connectedEnterprise, beginExpansionTransition]);
+
+  useEffect(() => {
+    if (!state.isAscending && isSourceDriftEligible(state)) beginExpansionTransition('governance_crisis', 'source_drift_detected');
   }, [state.isAscending, state.expansionProgress, state.connectedEnterprise, beginExpansionTransition]);
 
   const pendingPilot = state.expansionProgress.transition;
@@ -1221,6 +1264,21 @@ export const useGameEngine = () => {
           expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'lightspeed', step: 'batch_routing_active' } } };
       }
       return { ...prev, expansionProgress: { era: 'lightspeed', transition: null } };
+    });
+  };
+
+  const sourceDriftFeedbackStep = (snapshot: GameState): 'source_drift_detected' | 'customer_impact_visible' | null => {
+    if (!hasSourceDriftProof(snapshot)) return null;
+    const step = sourceDriftStep(snapshot);
+    if (step === 'source_drift_detected') return step;
+    return step === 'customer_impact_visible' && snapshot.connectedEnterprise.sourceDriftIncident.customerImpactVisible ? step : null;
+  };
+  const acknowledgeSourceDrift = (expectedStep: 'source_drift_detected' | 'customer_impact_visible') => {
+    setState(prev => {
+      if (!canPresentPilotIntroduction(prev) || sourceDriftFeedbackStep(prev) !== expectedStep) return prev;
+      if (expectedStep === 'customer_impact_visible') return { ...prev, expansionProgress: { era: 'governance_crisis', transition: null } };
+      return { ...prev, expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'governance_crisis',
+        step: prev.connectedEnterprise.sourceDriftIncident.customerImpactVisible ? 'customer_impact_visible' : 'quarantine_monitoring' } } };
     });
   };
 
@@ -1781,6 +1839,7 @@ export const useGameEngine = () => {
     productWriteProposal: productWriteAttempt ? (productWriteAttempt.kind === 'queue'
       ? queueWriteProposal(state, productWriteAttempt.index) : productWriteAttempt.kind === 'policy_trial'
         ? getPolicyTrialProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
+    sourceDriftUpdate: { step: sourceDriftFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     writeScaleUpdate: { step: writeScaleFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     writePolicyUpdate: { step: writePolicyFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     policyTrialAvailable: isPolicyTrialActive(state) && canPresentPilotIntroduction(state),
@@ -1804,7 +1863,7 @@ export const useGameEngine = () => {
       acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
       connectProductDb, acknowledgeConnectedResult,
       grantProductWrite, openProductWriteReview, closeProductWriteReview, applyProductWrite, acknowledgeWriteResult,
-      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale,
+      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale, acknowledgeSourceDrift,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

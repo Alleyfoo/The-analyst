@@ -26,7 +26,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate } = useGameEngine();
   const [pilotOpen, setPilotOpen] = useState(false);
   useEffect(() => {
     if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready' || pilotIntroduction.step === 'rollout_review') setPilotOpen(false);
@@ -221,6 +221,11 @@ const App: React.FC = () => {
         onContinue={step => {
           if (step === 'batch_routing_offer' || step === 'batch_scale_visible') { actions.acknowledgeProductWriteScale(step); setPilotOpen(false); }
         }} onLater={() => setPilotOpen(false)} />}
+      {pilotOpen && sourceDriftUpdate.step && sourceDriftUpdate.available && <AIPilotIntroduction
+        step={sourceDriftUpdate.step} sourceDrift={state.connectedEnterprise.sourceDriftIncident}
+        onContinue={step => {
+          if (step === 'source_drift_detected' || step === 'customer_impact_visible') { actions.acknowledgeSourceDrift(step); setPilotOpen(false); }
+        }} onLater={() => setPilotOpen(false)} />}
       {productWriteAttempt && productWriteProposal && <ProductWriteReview attempt={productWriteAttempt} proposal={productWriteProposal}
         reviewBacklog={state.connectedEnterprise.productWriteScale.active && productWriteAttempt.kind === 'queue' ? state.connectedEnterprise.productWriteScale.reviewBacklog : undefined}
         queueMode={productWriteAttempt.kind === 'queue'} trialMode={productWriteAttempt.kind === 'policy_trial'}
@@ -279,6 +284,7 @@ const App: React.FC = () => {
                 onReviewSchemaBatch={actions.openSchemaBatchReview}
                 writeQueueUpdate={writeQueueUpdate}
                 writeScaleUpdate={writeScaleUpdate}
+                sourceDriftUpdate={sourceDriftUpdate}
                 writePolicyUpdate={writePolicyUpdate}
                 policyTrialAvailable={policyTrialAvailable}
                 onReviewPolicyTrial={actions.openPolicyTrialWrite}

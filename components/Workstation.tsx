@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GameState, Upgrade, ResourceType, UpgradeCategory, LogMessage, CampaignType, AIPilotStep } from '../types';
-import { UPGRADES, checkUpgradeVisibility, isAscensionDeferred, TICK_RATE_MS, getProductWriteVelocity, PRODUCT_WRITE_QUEUE_CAP } from '../constants';
+import { UPGRADES, checkUpgradeVisibility, isAscensionDeferred, TICK_RATE_MS, getProductWriteVelocity, PRODUCT_WRITE_QUEUE_CAP, SOURCE_DRIFT } from '../constants';
 import { Filter, Activity, Lock, Cpu, Terminal as TerminalIcon, Users, Scale, FlaskConical, Briefcase, Server, Wand2, FileCode, Database, Brain, GitGraph, TrendingUp, DollarSign, Megaphone, Send, Smartphone, Tv, Zap, Infinity as InfinityIcon, Sparkles, FileText, Scan, Coffee, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -40,6 +40,7 @@ interface Props {
   writeUpdate: { step: 'write_access_offer' | 'write_pilot_success' | null; available: boolean };
   productWriteAvailable: boolean;
   writeQueueUpdate: { step: 'approval_rollout_ready' | 'approval_bottleneck_visible' | null; available: boolean };
+  sourceDriftUpdate: { step: 'source_drift_detected' | 'customer_impact_visible' | null; available: boolean };
   writeScaleUpdate: { step: 'batch_routing_offer' | 'batch_scale_visible' | null; available: boolean };
   writePolicyUpdate: { step: 'approval_policy_offer' | 'policy_trial_success' | null; available: boolean };
   policyTrialAvailable: boolean;
@@ -80,7 +81,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate, sourceDriftUpdate }) => {
   const writeVelocity = getProductWriteVelocity(state.connectedEnterprise.productWritePolicy.autoClasses.length);
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -200,8 +201,8 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
         </button>
         {!accelerationUpdate.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
       </div>}
-      {(state.expansionProgress.era === 'acceleration' || state.expansionProgress.era === 'connected_enterprise' || state.expansionProgress.era === 'good_enough' || state.expansionProgress.era === 'lightspeed') &&
-       (state.expansionProgress.transition === null || state.expansionProgress.transition.targetEra === 'connected_enterprise' || state.expansionProgress.transition.targetEra === 'lightspeed' ||
+      {(state.expansionProgress.era === 'acceleration' || state.expansionProgress.era === 'connected_enterprise' || state.expansionProgress.era === 'good_enough' || state.expansionProgress.era === 'lightspeed' || state.expansionProgress.era === 'governance_crisis') &&
+       (state.expansionProgress.transition === null || state.expansionProgress.transition.targetEra === 'connected_enterprise' || state.expansionProgress.transition.targetEra === 'lightspeed' || state.expansionProgress.transition.targetEra === 'governance_crisis' ||
         (state.expansionProgress.era === 'connected_enterprise' && state.expansionProgress.transition.targetEra === 'good_enough')) && state.upgrades['pandas_scripts'] === true && (
         <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
           {schemaUpdate.step ? <>
@@ -221,6 +222,16 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
       )}
       {(connectedUpdate.step || state.connectedEnterprise.productDb.connected) && <div className="shrink-0 border-b border-blue-800/50 bg-blue-950/30 p-3 text-xs text-slate-300">
         {state.connectedEnterprise.productDb.connected && <p className="font-bold text-blue-200">CONNECTED SYSTEMS · Product DB · {state.connectedEnterprise.productDb.access === 'read_write' ? (state.connectedEnterprise.productWritePolicy.configured ? 'READ + WRITE · BOUNDED APPROVAL POLICY' : 'READ + WRITE · HUMAN APPROVAL REQUIRED') : 'READ ONLY'}</p>}
+        {state.connectedEnterprise.sourceDriftIncident.active && <div className="mt-2 border border-amber-700/50 rounded p-2 space-y-1">
+          <p className="font-bold text-amber-200">SOURCE QUALITY · DRIFT DETECTED</p>
+          <p>Supplier Width · EXPECTED: {SOURCE_DRIFT.expected} · OBSERVED: {SOURCE_DRIFT.observed}</p>
+          <p>QUARANTINED: {state.connectedEnterprise.sourceDriftIncident.quarantined.toLocaleString()} · AFFECTED PRODUCTS: {state.connectedEnterprise.sourceDriftIncident.affectedProducts.toLocaleString()}</p>
+          <p>STATUS: NO WRITE ATTEMPTED · Upstream quarantine, separate from write review</p>
+          {sourceDriftUpdate.step && <button onClick={onReviewPilot} disabled={!sourceDriftUpdate.available}
+            className="mt-2 w-full py-2 border border-amber-500 rounded text-amber-200 disabled:opacity-40 hover:bg-amber-900/30">
+            {sourceDriftUpdate.step === 'source_drift_detected' ? 'Review source format change' : 'Review customer feedback'}
+          </button>}
+        </div>}
         {writeScaleUpdate.step && <button onClick={onReviewPilot} disabled={!writeScaleUpdate.available}
           className="mt-2 w-full py-2 border border-indigo-500 rounded text-indigo-200 disabled:opacity-40 hover:bg-indigo-900/30">
           {writeScaleUpdate.step === 'batch_routing_offer' ? 'Review batch routing' : 'Review operating scale'}

@@ -725,3 +725,6 @@ export const getProductWriteVelocity = (autoClassCount: number) => {
   const auto = total * autoClassCount / PRODUCT_WRITE_CLASSES.length;
   return { total, auto, review: total - auto };
 };
+
+// Unknown upstream values never enter the validated write templates or policy classes.
+export const SOURCE_DRIFT = { expected: "45 cm", observed: "~45 cm", recordsPerBatch: 5, impactBatches: 5 } as const;
