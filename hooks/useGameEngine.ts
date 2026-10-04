@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS } from '../constants';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -77,6 +77,17 @@ const sqlQueryReward = (prev: GameState, reward: number, puBonus: number): GameS
     };
 };
 
+const isSchemaBatchEligible = (state: GameState) => state.expansionProgress.era === 'acceleration' &&
+    state.expansionProgress.transition === null && state.upgrades['pandas_scripts'] === true;
+
+const isSchemaBatchActive = (state: GameState) => isSchemaBatchEligible(state) &&
+    state.schemaBatchReview.introduced && state.schemaBatchReview.active &&
+    state.schemaBatchReview.exceptionsTotal === 5 && state.schemaBatchReview.exceptionsResolved === 0 &&
+    ((state.schemaBatchReview.batchesCompleted === 0 && state.schemaBatchReview.batchSize === 2400 && state.schemaBatchReview.autoMapped === 2395) ||
+     (state.schemaBatchReview.batchesCompleted === 1 && state.schemaBatchReview.batchSize === 12000 && state.schemaBatchReview.autoMapped === 11995));
+
+type SchemaBatchAttempt = { id: number; fieldIds: number[]; batchesCompleted: number };
+
 const hydrateState = (parsed: any): GameState => {
     const savedProgress = parsed.expansionProgress;
     const savedTransition = savedProgress?.transition;
@@ -84,6 +95,13 @@ const hydrateState = (parsed: any): GameState => {
     const state: GameState = {
         ...INITIAL_STATE,
         ...parsed,
+        schemaBatchReview: {
+            ...INITIAL_STATE.schemaBatchReview,
+            introduced: parsed.schemaBatchReview?.introduced === true,
+            active: parsed.schemaBatchReview?.active === true,
+            ...Object.fromEntries(['batchSize', 'autoMapped', 'exceptionsTotal', 'exceptionsResolved', 'batchesCompleted'].map(key => [key,
+                Number.isSafeInteger(parsed.schemaBatchReview?.[key]) && parsed.schemaBatchReview[key] >= 0 ? parsed.schemaBatchReview[key] : 0])),
+        },
         aiReviewDemand: {
             ...INITIAL_STATE.aiReviewDemand,
             active: parsed.aiReviewDemand?.active === true,
@@ -166,6 +184,16 @@ export const useGameEngine = () => {
   const [sqlQueueAttemptId, setSQLQueueAttemptId] = useState<number | null>(null);
   const sqlQueueAttempt = useRef<{ id: number; wave: number; completed: number } | null>(null);
   const sqlQueueSequence = useRef(0);
+  const [schemaBatchAttempt, setSchemaBatchAttempt] = useState<SchemaBatchAttempt | null>(null);
+  const schemaBatchAttemptRef = useRef<SchemaBatchAttempt | null>(null);
+  const schemaBatchSequence = useRef(0);
+
+  useEffect(() => {
+    if (!state.pandasMode) {
+      schemaBatchAttemptRef.current = null;
+      setSchemaBatchAttempt(null);
+    }
+  }, [state.pandasMode, schemaBatchAttempt]);
 
   useEffect(() => {
     if (!state.sqlMode) {
@@ -714,6 +742,57 @@ export const useGameEngine = () => {
           expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'acceleration', step: 'accelerated_routing_active' } } };
       }
       return { ...prev, expansionProgress: { ...prev.expansionProgress, era: 'acceleration', transition: null } };
+    });
+  };
+
+  const schemaFeedbackStep = (snapshot: GameState): 'schema_introduction' | 'schema_first_result' | null => {
+    if (!isSchemaBatchEligible(snapshot)) return null;
+    const batch = snapshot.schemaBatchReview;
+    if (!batch.introduced && !batch.active && batch.batchesCompleted === 0) return 'schema_introduction';
+    return batch.introduced && !batch.active && batch.batchesCompleted === 1 && batch.exceptionsResolved === 5
+      ? 'schema_first_result' : null;
+  };
+
+  const acknowledgeSchemaUpdate = (expectedStep: 'schema_introduction' | 'schema_first_result') => {
+    setState(prev => {
+      if (!canPresentPilotIntroduction(prev) || schemaFeedbackStep(prev) !== expectedStep) return prev;
+      const batchSize = expectedStep === 'schema_introduction' ? 2400 : 12000;
+      return { ...prev, schemaBatchReview: { ...prev.schemaBatchReview, introduced: true, active: true,
+        batchSize, autoMapped: batchSize - 5, exceptionsTotal: 5, exceptionsResolved: 0 } };
+    });
+  };
+
+  const openSchemaBatchReview = () => {
+    const current = stateRef.current;
+    if (!isSchemaBatchActive(current) || current.rawData < 20 || !canPresentPilotIntroduction(current) || schemaBatchAttemptRef.current) return;
+    const attempt = { id: ++schemaBatchSequence.current, batchesCompleted: current.schemaBatchReview.batchesCompleted,
+      fieldIds: Array.from({ length: RAW_HEADERS.length }, (_, i) => i).sort(() => Math.random() - 0.5).slice(0, 5) };
+    schemaBatchAttemptRef.current = attempt;
+    setSchemaBatchAttempt(attempt);
+    setState(prev => isSchemaBatchActive(prev) && canPresentPilotIntroduction(prev) && prev.rawData >= 20 &&
+      prev.schemaBatchReview.batchesCompleted === attempt.batchesCompleted ? { ...prev, pandasMode: true } : prev);
+  };
+
+  const closeSchemaBatchReview = (attemptId: number) => {
+    if (schemaBatchAttemptRef.current?.id !== attemptId) return;
+    schemaBatchAttemptRef.current = null;
+    setSchemaBatchAttempt(null);
+    setState(prev => ({ ...prev, pandasMode: false }));
+  };
+
+  const completeSchemaBatchReview = (attemptId: number, mappings: { rawId: number; cleanId: number }[], mistakes: number) => {
+    // Capture issued authority before the presentation closes and clears its transient ref.
+    const attempt = schemaBatchAttemptRef.current;
+    setState(prev => {
+      if (isRebooting || prev.isAscending || !isSchemaBatchActive(prev) || !prev.pandasMode || !attempt || attempt.id !== attemptId ||
+          attempt.batchesCompleted !== prev.schemaBatchReview.batchesCompleted || !Number.isSafeInteger(mistakes) || mistakes < 0 ||
+          !Array.isArray(mappings) || mappings.length !== 5 || new Set(mappings.map(pair => pair?.rawId)).size !== 5 ||
+          !mappings.every(pair => pair && pair.rawId === pair.cleanId && attempt.fieldIds.includes(pair.rawId)) || prev.rawData < 20) return prev;
+      const qualityBonus = Math.max(0.01, 0.05 - mistakes * 0.01);
+      return { ...prev, rawData: prev.rawData - 20, cleanData: prev.cleanData + 50 * (1 + prev.prestige.level * 0.1),
+        metricQuality: Math.min(1.0, prev.metricQuality + qualityBonus),
+        logs: [...prev.logs, { id: Date.now(), text: `Schema Mapping Complete. Quality +${(qualityBonus * 100).toFixed(0)}%.`, type: 'success', timestamp: Date.now() }],
+        schemaBatchReview: { ...prev.schemaBatchReview, active: false, exceptionsResolved: 5, batchesCompleted: prev.schemaBatchReview.batchesCompleted + 1 } };
     });
   };
 
@@ -1266,6 +1345,9 @@ export const useGameEngine = () => {
     aiReviewAvailable: isAIReviewActive(state) && canPresentPilotIntroduction(state),
     aiReviewDemandActive: hasContinuousAIReviewDemand(state),
     accelerationUpdate: { step: accelerationFeedbackStep(state), available: canPresentPilotIntroduction(state) },
+    schemaBatchAttempt,
+    schemaUpdate: { step: schemaFeedbackStep(state), available: canPresentPilotIntroduction(state) },
+    schemaBatchAvailable: isSchemaBatchActive(state) && state.rawData >= 20 && canPresentPilotIntroduction(state),
     operationalRollout: { offered: state.expansionProgress.era === 'ai_pilot' &&
         state.expansionProgress.transition?.targetEra === 'acceleration' && state.expansionProgress.transition.step === 'continuous_demand_offer',
         available: canPresentPilotIntroduction(state) },
@@ -1274,6 +1356,7 @@ export const useGameEngine = () => {
       beginSQLPilotAttempt, completeSQLPilotQuery,
       openNextAIReview, completeAIReviewQuery,
       acknowledgeOperationalRollout, acknowledgeAccelerationUpdate,
+      acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

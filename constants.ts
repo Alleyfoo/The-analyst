@@ -5,6 +5,18 @@ export const HISTORY_LENGTH = 50;
 export const AI_REVIEW_QUEUE_CAP = 12;
 export const AI_REVIEW_ACCELERATED_INTERVAL_TICKS = 20;
 
+// Existing Schema Mapping vocabulary, shared by manual boards and issued exceptions.
+export const RAW_HEADERS = [
+  'User_ID_final_v2', '$$revenue$$', 'cust_name (legacy)', 'Unnamed: 0',
+  'e_mail_ADDR', 'is_active?', 'manager_notes_hidden', 'Date (ISO)',
+  'x_coord', 'Q3_Profit_LOSS', 'ERROR_CODE', 'temp_c'
+];
+export const CLEAN_HEADERS = [
+  'UserID', 'Revenue', 'CustomerName', 'Index',
+  'Email', 'IsActive', 'Notes', 'Timestamp',
+  'X', 'Profit', 'ErrorID', 'Temperature'
+];
+
 // Gameplay ending availability comes only from persisted expansion authority.
 export const isAscensionDeferred = (state: GameState): boolean =>
     state.expansionProgress.era !== 'analyst' || state.expansionProgress.transition !== null;

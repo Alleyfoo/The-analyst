@@ -24,7 +24,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt } = useGameEngine();
   const [pilotOpen, setPilotOpen] = useState(false);
   useEffect(() => {
     if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready' || pilotIntroduction.step === 'rollout_review') setPilotOpen(false);
@@ -101,10 +101,14 @@ const App: React.FC = () => {
       />
       
       <PandasMappingGame 
+         key={schemaBatchAttempt?.id ?? 'manual'}
          active={state.pandasMode}
-         onClose={actions.togglePandasMode}
+         onClose={schemaBatchAttempt ? () => actions.closeSchemaBatchReview(schemaBatchAttempt.id) : actions.togglePandasMode}
          onComplete={actions.completePandasLevel}
          rawData={state.rawData}
+         batchReview={schemaBatchAttempt ? { attemptId: schemaBatchAttempt.id, fieldIds: schemaBatchAttempt.fieldIds,
+           batchSize: state.schemaBatchReview.batchSize, autoMapped: state.schemaBatchReview.autoMapped } : null}
+         onBatchComplete={actions.completeSchemaBatchReview}
       />
 
       <SQLMiningGame 
@@ -165,7 +169,7 @@ const App: React.FC = () => {
       {pilotOpen && pilotIntroduction.available && pilotIntroduction.step && pilotIntroduction.step !== 'pilot_ready' && pilotIntroduction.step !== 'rollout_review' && (
         <AIPilotIntroduction
           step={pilotIntroduction.step}
-          onContinue={step => { if (step !== 'continuous_demand_offer' && step !== 'pressure_visible' && step !== 'review_bottleneck_visible') actions.advancePilotIntroduction(step); }}
+          onContinue={step => { if (step !== 'continuous_demand_offer' && step !== 'pressure_visible' && step !== 'review_bottleneck_visible' && step !== 'schema_introduction' && step !== 'schema_first_result') actions.advancePilotIntroduction(step); }}
           onLater={() => setPilotOpen(false)}
         />
       )}
@@ -175,6 +179,11 @@ const App: React.FC = () => {
       {pilotOpen && accelerationUpdate.step && accelerationUpdate.available && (
         <AIPilotIntroduction step={accelerationUpdate.step}
           onContinue={step => { if (step === 'pressure_visible' || step === 'review_bottleneck_visible') { actions.acknowledgeAccelerationUpdate(step); setPilotOpen(false); } }}
+          onLater={() => setPilotOpen(false)} />
+      )}
+      {pilotOpen && schemaUpdate.step && schemaUpdate.available && (
+        <AIPilotIntroduction step={schemaUpdate.step}
+          onContinue={step => { if (step === 'schema_introduction' || step === 'schema_first_result') { actions.acknowledgeSchemaUpdate(step); setPilotOpen(false); } }}
           onLater={() => setPilotOpen(false)} />
       )}
 
@@ -225,6 +234,9 @@ const App: React.FC = () => {
                 operationalRollout={operationalRollout}
                 aiReviewDemandActive={aiReviewDemandActive}
                 accelerationUpdate={accelerationUpdate}
+                schemaUpdate={schemaUpdate}
+                schemaBatchAvailable={schemaBatchAvailable}
+                onReviewSchemaBatch={actions.openSchemaBatchReview}
             />
         </div>
 

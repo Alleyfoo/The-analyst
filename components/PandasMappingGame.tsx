@@ -2,25 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Code, Check, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
+import { RAW_HEADERS, CLEAN_HEADERS } from '../constants';
 
 interface Props {
   active: boolean;
   onClose: () => void;
   onComplete: (cost: number, reward: number, qualityBonus: number) => void;
   rawData: number;
+  batchReview: { attemptId: number; fieldIds: number[]; batchSize: number; autoMapped: number } | null;
+  onBatchComplete: (attemptId: number, mappings: { rawId: number; cleanId: number }[], mistakes: number) => void;
 }
-
-const RAW_HEADERS = [
-  'User_ID_final_v2', '$$revenue$$', 'cust_name (legacy)', 'Unnamed: 0', 
-  'e_mail_ADDR', 'is_active?', 'manager_notes_hidden', 'Date (ISO)',
-  'x_coord', 'Q3_Profit_LOSS', 'ERROR_CODE', 'temp_c'
-];
-
-const CLEAN_HEADERS = [
-  'UserID', 'Revenue', 'CustomerName', 'Index',
-  'Email', 'IsActive', 'Notes', 'Timestamp',
-  'X', 'Profit', 'ErrorID', 'Temperature'
-];
 
 interface Pair {
   id: number;
@@ -28,18 +19,19 @@ interface Pair {
   clean: string;
 }
 
-export const PandasMappingGame: React.FC<Props> = ({ active, onClose, onComplete, rawData }) => {
+export const PandasMappingGame: React.FC<Props> = ({ active, onClose, onComplete, rawData, batchReview, onBatchComplete }) => {
   const [level, setLevel] = useState<Pair[]>([]);
   const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
   const [matches, setMatches] = useState<Record<number, number>>({}); // leftId -> rightId
   const [mistakes, setMistakes] = useState(0);
   const [completed, setCompleted] = useState(false);
+  const batchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Generate level on open
   useEffect(() => {
     if (active) {
       const count = 5;
-      const indices = Array.from({ length: RAW_HEADERS.length }, (_, i) => i).sort(() => Math.random() - 0.5).slice(0, count);
+      const indices = batchReview ? batchReview.fieldIds : Array.from({ length: RAW_HEADERS.length }, (_, i) => i).sort(() => Math.random() - 0.5).slice(0, count);
       
       const pairs = indices.map(i => ({
         id: i,
@@ -57,6 +49,7 @@ export const PandasMappingGame: React.FC<Props> = ({ active, onClose, onComplete
 
   // Check completion
   useEffect(() => {
+    if (batchReview) return; // Batch timers/authority are isolated from the preserved manual path.
     if (level.length > 0 && Object.keys(matches).length === level.length) {
       setCompleted(true);
       setTimeout(() => {
@@ -68,6 +61,26 @@ export const PandasMappingGame: React.FC<Props> = ({ active, onClose, onComplete
       }, 1500);
     }
   }, [matches, level]);
+
+  useEffect(() => {
+    if (!batchReview || !active || level.length !== 5 || Object.keys(matches).length !== 5) return;
+    setCompleted(true);
+    batchTimer.current = setTimeout(() => {
+      batchTimer.current = null;
+      onBatchComplete(batchReview.attemptId, Object.entries(matches).map(([rawId, cleanId]) => ({ rawId: Number(rawId), cleanId })), mistakes);
+      onClose();
+    }, 1500);
+    return () => {
+      if (batchTimer.current !== null) clearTimeout(batchTimer.current);
+      batchTimer.current = null;
+    };
+  }, [active, matches, level, batchReview?.attemptId]);
+
+  const handleClose = () => {
+    if (batchTimer.current !== null) clearTimeout(batchTimer.current);
+    batchTimer.current = null;
+    onClose();
+  };
 
   const handleLeftClick = (id: number) => {
     if (matches[id]) return;
@@ -109,8 +122,13 @@ export const PandasMappingGame: React.FC<Props> = ({ active, onClose, onComplete
                 <Code size={16} className="text-yellow-400" />
                 <span className="text-slate-300 font-bold">schema_alignment_tool.py</span>
             </div>
-            <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={18} /></button>
+            <button onClick={handleClose} aria-label="Close schema mapping" className="text-slate-500 hover:text-white"><X size={18} /></button>
         </div>
+        {batchReview && <div className="px-4 py-3 border-b border-slate-700 bg-slate-900 text-xs text-blue-200">
+          <p className="font-bold">AI BATCH MAPPING</p>
+          <p className="mt-1">{batchReview.batchSize.toLocaleString()} fields processed · {batchReview.autoMapped.toLocaleString()} mapped automatically · 5 require analyst review</p>
+          <p className="mt-1 text-slate-400">Ambiguous mappings withheld for human resolution. Automatic mappings are correct.</p>
+        </div>}
 
         {/* Content */}
         <div className="flex-1 flex p-8 relative">
