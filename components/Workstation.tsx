@@ -40,6 +40,9 @@ interface Props {
   writeUpdate: { step: 'write_access_offer' | 'write_pilot_success' | null; available: boolean };
   productWriteAvailable: boolean;
   writeQueueUpdate: { step: 'approval_rollout_ready' | 'approval_bottleneck_visible' | null; available: boolean };
+  executiveReviewAvailable: boolean;
+  expansionEndingReady: boolean;
+  onOpenExecutiveReview: () => void;
   sourceRemediationAvailable: boolean;
   onOpenSourceRepair: () => void;
   incidentTraceAvailable: boolean;
@@ -85,7 +88,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, onOpenIncidentTrace, sourceRemediationAvailable, onOpenSourceRepair }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, onOpenIncidentTrace, sourceRemediationAvailable, onOpenSourceRepair, executiveReviewAvailable, expansionEndingReady, onOpenExecutiveReview }) => {
   const writeVelocity = getProductWriteVelocity(state.connectedEnterprise.productWritePolicy.autoClasses.length);
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -235,7 +238,13 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
             {state.connectedEnterprise.incidentInvestigation.rootCauseProven ? <>
               <p className="font-bold text-amber-200">ROOT CAUSE: CONFIRMED · Source contract drift</p>
               <p>Containment: {state.connectedEnterprise.sourceDriftIncident.active ? 'QUARANTINED' : 'SOURCE CONTRACT UPDATED'} · Remediation: {state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' ? 'COMPLETE' : state.connectedEnterprise.sourceDriftRemediation.active ? 'IN PROGRESS' : 'NOT DEFINED'}</p>
-              {state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' && <p>REPROCESSED: {state.connectedEnterprise.sourceDriftRemediation.resolvedProducts.toLocaleString()} · EXECUTIVE REVIEW: READY</p>}
+              {state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' && <p>REPROCESSED: {state.connectedEnterprise.sourceDriftRemediation.resolvedProducts.toLocaleString()} · EXECUTIVE REVIEW: {state.connectedEnterprise.executiveReview.step === 'review_complete' ? 'COMPLETE' : state.connectedEnterprise.executiveReview.active ? 'IN PROGRESS' : 'READY'}</p>}
+              {executiveReviewAvailable && <>
+                {expansionEndingReady && <p>FULL AUTOMATION ROLLOUT: ACTIVE · EXCEPTIONS: GOVERNED · EXPANSION END-STATE: READY · ASCENSION DEFERRED</p>}
+                <button onClick={onOpenExecutiveReview} className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 hover:bg-blue-900/30">
+                  {state.connectedEnterprise.executiveReview.step === 'review_complete' ? 'REVIEW EXECUTIVE RESULT' : state.connectedEnterprise.executiveReview.active ? 'CONTINUE EXECUTIVE REVIEW' : 'OPEN EXECUTIVE REVIEW'}
+                </button>
+              </>}
               <button onClick={onOpenSourceRepair} disabled={!sourceRemediationAvailable}
                 className="mt-2 w-full py-2 border border-amber-500 rounded text-amber-200 disabled:opacity-40 hover:bg-amber-900/30">
                 {state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' ? 'REVIEW REMEDIATION' : state.connectedEnterprise.sourceDriftRemediation.active ? 'CONTINUE REMEDIATION' : 'DEFINE REMEDIATION'}

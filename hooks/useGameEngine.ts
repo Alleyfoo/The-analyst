@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale, SourceDriftIncident, IncidentInvestigation, IncidentInvestigationStep, INCIDENT_INVESTIGATION_STEPS, SourceDriftRemediation, SOURCE_REMEDIATION_STEPS } from '../types';
+import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale, SourceDriftIncident, IncidentInvestigation, IncidentInvestigationStep, INCIDENT_INVESTIGATION_STEPS, SourceDriftRemediation, SOURCE_REMEDIATION_STEPS, ExecutiveReviewState, ExecutiveReviewStep, EXECUTIVE_REVIEW_STEPS } from '../types';
 import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal, PRODUCT_WRITE_BATCH_SIZE, SOURCE_DRIFT, INCIDENT_TRACE_EVIDENCE } from '../constants';
 
 // Board Meeting Settings
@@ -210,6 +210,20 @@ const isSourceRemediationAvailable = (state: GameState) => hasConfirmedIncidentR
     state.connectedEnterprise.sourceDriftIncident.customerImpactVisible &&
     (state.connectedEnterprise.sourceDriftRemediation.active ||
       (state.connectedEnterprise.sourceDriftIncident.active && state.connectedEnterprise.sourceDriftIncident.affectedProducts > 0));
+const isExecutiveReviewValid = (review: ExecutiveReviewState) => typeof review.active === 'boolean' &&
+    EXECUTIVE_REVIEW_STEPS.includes(review.step) &&
+    review.controlsAccepted === ['programme_decision', 'review_complete'].includes(review.step) &&
+    review.fullAutomationRolloutStarted === (review.step === 'review_complete') &&
+    (review.active || review.step === 'evidence_packet');
+const hasExecutiveReviewEvidence = (state: GameState) => hasConfirmedIncidentRootCause(state) && hasSourceDriftProof(state) &&
+    state.connectedEnterprise.sourceDriftRemediation.active && state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' &&
+    !state.connectedEnterprise.sourceDriftIncident.active && state.connectedEnterprise.sourceDriftIncident.affectedProducts === 0 &&
+    state.connectedEnterprise.sourceDriftRemediation.resolvedProducts > 0 &&
+    state.connectedEnterprise.sourceDriftRemediation.resolvedProducts === state.connectedEnterprise.sourceDriftIncident.quarantined;
+const isExpansionEndingReady = (state: GameState) => hasExecutiveReviewEvidence(state) &&
+    isExecutiveReviewValid(state.connectedEnterprise.executiveReview) && state.connectedEnterprise.executiveReview.active &&
+    state.connectedEnterprise.executiveReview.step === 'review_complete';
+
 const canReviewIncidentTrace = (state: GameState) => isIncidentInvestigationEligible(state) ||
     (hasConfirmedIncidentRootCause(state) && hasSourceDriftProof(state) && state.connectedEnterprise.sourceDriftRemediation.ruleApproved);
 
@@ -328,6 +342,12 @@ const hydrateProductWriteScale = (saved: any): ProductWriteScale => {
       totalRouted: saved.totalRouted, autoApplied: saved.autoApplied, reviewRouted: saved.reviewRouted, reviewBacklog: saved.reviewBacklog };
 };
 
+const hydrateExecutiveReview = (saved: any): ExecutiveReviewState => {
+    if (!saved || !isExecutiveReviewValid(saved)) return { ...INITIAL_STATE.connectedEnterprise.executiveReview };
+    return { active: saved.active, step: saved.step, controlsAccepted: saved.controlsAccepted,
+      fullAutomationRolloutStarted: saved.fullAutomationRolloutStarted };
+};
+
 const hydrateSourceDriftRemediation = (saved: any): SourceDriftRemediation => {
     if (!saved || !isSourceRemediationValid(saved)) return { ...INITIAL_STATE.connectedEnterprise.sourceDriftRemediation };
     return { active: saved.active, step: saved.step, supplierSemanticsConfirmed: saved.supplierSemanticsConfirmed,
@@ -357,6 +377,7 @@ const hydrateState = (parsed: any): GameState => {
         ...INITIAL_STATE,
         ...parsed,
         connectedEnterprise: {
+            executiveReview: hydrateExecutiveReview(parsed.connectedEnterprise?.executiveReview),
             sourceDriftRemediation: hydrateSourceDriftRemediation(parsed.connectedEnterprise?.sourceDriftRemediation),
             incidentInvestigation: hydrateIncidentInvestigation(parsed.connectedEnterprise?.incidentInvestigation),
             sourceDriftIncident: hydrateSourceDriftIncident(parsed.connectedEnterprise?.sourceDriftIncident, parsed.connectedEnterprise?.sourceDriftRemediation),
@@ -436,6 +457,8 @@ const hydrateState = (parsed: any): GameState => {
           ? { ...incident, active: true, affectedProducts: incident.quarantined }
           : { ...INITIAL_STATE.connectedEnterprise.sourceDriftIncident };
     }
+
+    if (!hasExecutiveReviewEvidence(state)) state.connectedEnterprise.executiveReview = { ...INITIAL_STATE.connectedEnterprise.executiveReview };
 
     // Hydrate Active Events (reattach functions from constants)
     state.activeEvents = (parsed.activeEvents || []).map((savedEv: any) => {
@@ -1404,6 +1427,30 @@ export const useGameEngine = () => {
     });
   };
 
+  const beginExecutiveReview = () => {
+    setState(prev => {
+      if (!hasExecutiveReviewEvidence(prev) || !canPresentPilotIntroduction(prev) || prev.connectedEnterprise.executiveReview.active) return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise,
+        executiveReview: { ...INITIAL_STATE.connectedEnterprise.executiveReview, active: true } } };
+    });
+  };
+  const advanceExecutiveReview = (expectedStep: ExecutiveReviewStep) => {
+    setState(prev => {
+      const review = prev.connectedEnterprise.executiveReview;
+      if (!hasExecutiveReviewEvidence(prev) || !canPresentPilotIntroduction(prev) || !isExecutiveReviewValid(review) ||
+        !review.active || review.step !== expectedStep) return prev;
+      const next: ExecutiveReviewState = expectedStep === 'evidence_packet' ? { ...review, step: 'controls_review' } :
+        expectedStep === 'controls_review' ? { ...review, step: 'programme_decision', controlsAccepted: true } :
+        expectedStep === 'programme_decision' ? { ...review, step: 'review_complete', fullAutomationRolloutStarted: true } : review;
+      if (next === review) return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, executiveReview: next } };
+    });
+  };
+  const presentExecutiveFindings = () => advanceExecutiveReview('evidence_packet');
+  const submitExecutiveControls = () => advanceExecutiveReview('controls_review');
+  // Witnessing management's decision is distinct from granting strategic approval.
+  const acknowledgeExecutiveDecision = () => advanceExecutiveReview('programme_decision');
+
   const manualClean = () => {
     setState(prev => {
       if (prev.blockingTask) return prev; // Blocked
@@ -1961,6 +2008,8 @@ export const useGameEngine = () => {
     productWriteProposal: productWriteAttempt ? (productWriteAttempt.kind === 'queue'
       ? queueWriteProposal(state, productWriteAttempt.index) : productWriteAttempt.kind === 'policy_trial'
         ? getPolicyTrialProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
+    executiveReviewAvailable: hasExecutiveReviewEvidence(state) && canPresentPilotIntroduction(state),
+    expansionEndingReady: isExpansionEndingReady(state),
     sourceRemediationAvailable: isSourceRemediationAvailable(state) && canPresentPilotIntroduction(state),
     incidentTraceAvailable: canReviewIncidentTrace(state) && canPresentPilotIntroduction(state),
     sourceDriftUpdate: { step: sourceDriftFeedbackStep(state), available: canPresentPilotIntroduction(state) },
@@ -1987,7 +2036,7 @@ export const useGameEngine = () => {
       acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
       connectProductDb, acknowledgeConnectedResult,
       grantProductWrite, openProductWriteReview, closeProductWriteReview, applyProductWrite, acknowledgeWriteResult,
-      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale, acknowledgeSourceDrift, beginIncidentInvestigation, inspectIncidentTrace, confirmIncidentRootCause, beginSourceRemediation, requestSupplierClarification, approveSourceWidthRule, reprocessSourceQuarantine,
+      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale, acknowledgeSourceDrift, beginIncidentInvestigation, inspectIncidentTrace, confirmIncidentRootCause, beginSourceRemediation, requestSupplierClarification, approveSourceWidthRule, reprocessSourceQuarantine, beginExecutiveReview, presentExecutiveFindings, submitExecutiveControls, acknowledgeExecutiveDecision,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

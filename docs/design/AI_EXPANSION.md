@@ -158,6 +158,8 @@ Pre-approved classes, confidence thresholds, automated approval and exception-on
 
 **OPEN QUESTIONS.** Exact risk classes, how review depth relates to verification capacity, what happens to rejected batches, and the cost/reward of retaining a boundary. Crisis must remain reachable for cautious play without silently requiring the player to grant blanket unsafe authority; possible causes include bounded delegation, unknown input or a legacy rule, but none is chosen yet.
 
+**LOCKED DESIGN — S15 organisational authority (2026-10-04).** The analyst's late-game agency concerns evidence, containment, policy boundaries, source/schema rules, exception handling, write authority and governance controls. The analyst has no organisation-wide veto over adoption of the automated operating model. Executive review can accept the analyst's evidence and controls while separately deciding that automation rollout proceeds. “Full automation” means an automation-first operating model with governed exceptions, not every action being ungated. The endings determine the analyst's relationship to that system, not whether automation exists; both routes follow the organisation's commitment to the new operating model. Acknowledging management's decision records witnessing it, not strategic consent. Existing system-specific policies and authority remain binding.
+
 ## 10. Customer feedback / root-cause loop
 
 **LOCKED DESIGN.** Customer feedback reconnects internal confidence and throughput to reality. A complaint is evidence worth investigating, not merely a score penalty. Internal dashboards can look successful while customers cannot find products.

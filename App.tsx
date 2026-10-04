@@ -6,6 +6,7 @@ import { Workstation } from './components/Workstation';
 import { DashboardPanel } from './components/DashboardPanel';
 import { EventModal } from './components/EventModal';
 import { ProductWritePolicyEditor } from './components/ProductWritePolicyEditor';
+import { ExecutiveReview } from './components/ExecutiveReview';
 import { SourceContractRepair } from './components/SourceContractRepair';
 import { IncidentTrace } from './components/IncidentTrace';
 import { ProductWriteReview } from './components/ProductWriteReview';
@@ -28,7 +29,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, sourceRemediationAvailable } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, sourceRemediationAvailable, executiveReviewAvailable, expansionEndingReady } = useGameEngine();
+  const [executiveOpen, setExecutiveOpen] = useState(false);
+  useEffect(() => { if (!executiveReviewAvailable) setExecutiveOpen(false); }, [executiveReviewAvailable]);
   const [sourceRepairOpen, setSourceRepairOpen] = useState(false);
   useEffect(() => { if (!sourceRemediationAvailable) setSourceRepairOpen(false); }, [sourceRemediationAvailable]);
   const [incidentTraceOpen, setIncidentTraceOpen] = useState(false);
@@ -232,8 +235,12 @@ const App: React.FC = () => {
         onContinue={step => {
           if (step === 'source_drift_detected' || step === 'customer_impact_visible') { actions.acknowledgeSourceDrift(step); setPilotOpen(false); }
         }} onLater={() => setPilotOpen(false)} />}
+      {executiveOpen && executiveReviewAvailable && state.connectedEnterprise.executiveReview.active && <ExecutiveReview
+        enterprise={state.connectedEnterprise} endingReady={expansionEndingReady}
+        onPresent={actions.presentExecutiveFindings} onSubmitControls={actions.submitExecutiveControls}
+        onAcknowledge={actions.acknowledgeExecutiveDecision} onLater={() => setExecutiveOpen(false)} />}
       {sourceRepairOpen && sourceRemediationAvailable && state.connectedEnterprise.sourceDriftRemediation.active && <SourceContractRepair
-        repair={state.connectedEnterprise.sourceDriftRemediation} incident={state.connectedEnterprise.sourceDriftIncident}
+        executiveReview={state.connectedEnterprise.executiveReview} repair={state.connectedEnterprise.sourceDriftRemediation} incident={state.connectedEnterprise.sourceDriftIncident}
         onClarify={actions.requestSupplierClarification} onApprove={actions.approveSourceWidthRule}
         onReprocess={actions.reprocessSourceQuarantine} onLater={() => setSourceRepairOpen(false)} />}
       {incidentTraceOpen && incidentTraceAvailable && state.connectedEnterprise.incidentInvestigation.active && <IncidentTrace
@@ -299,6 +306,9 @@ const App: React.FC = () => {
                 writeQueueUpdate={writeQueueUpdate}
                 writeScaleUpdate={writeScaleUpdate}
                 sourceDriftUpdate={sourceDriftUpdate}
+                executiveReviewAvailable={executiveReviewAvailable}
+                expansionEndingReady={expansionEndingReady}
+                onOpenExecutiveReview={() => { actions.beginExecutiveReview(); setExecutiveOpen(true); }}
                 sourceRemediationAvailable={sourceRemediationAvailable}
                 onOpenSourceRepair={() => { actions.beginSourceRemediation(); setSourceRepairOpen(true); }}
                 incidentTraceAvailable={incidentTraceAvailable}

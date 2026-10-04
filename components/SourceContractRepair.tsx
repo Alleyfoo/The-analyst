@@ -1,8 +1,9 @@
 import React from 'react';
-import { SourceDriftIncident, SourceDriftRemediation } from '../types';
+import { SourceDriftIncident, SourceDriftRemediation, ExecutiveReviewState } from '../types';
 import { INCIDENT_TRACE_SAMPLE, SOURCE_DRIFT, SOURCE_WIDTH_AMENDMENT } from '../constants';
 
 interface Props {
+  executiveReview: ExecutiveReviewState;
   repair: SourceDriftRemediation;
   incident: SourceDriftIncident;
   onClarify: () => void;
@@ -12,7 +13,7 @@ interface Props {
 }
 
 // One governed supplier Width amendment and an explicitly authorized historical backfill.
-export const SourceContractRepair: React.FC<Props> = ({ repair, incident, onClarify, onApprove, onReprocess, onLater }) => {
+export const SourceContractRepair: React.FC<Props> = ({ executiveReview, repair, incident, onClarify, onApprove, onReprocess, onLater }) => {
   const clarification = repair.step === 'supplier_clarification';
   const review = repair.step === 'rule_review';
   const backfill = repair.step === 'backfill_ready';
@@ -58,8 +59,8 @@ export const SourceContractRepair: React.FC<Props> = ({ repair, incident, onClar
           <p>BEFORE: Canonical Width: MISSING · 45 cm filter: NOT INDEXED</p>
           <p>AFTER: Canonical Width: {SOURCE_WIDTH_AMENDMENT.nominalWidth} · Qualifier: {SOURCE_WIDTH_AMENDMENT.qualifier} · 45 cm filter: INDEXED</p>
           <p>The source contract evolved. No wrong write was rolled back; the original causal evidence remains available.</p>
-          <p>EXECUTIVE REVIEW: READY</p>
-          <p>Executive review and the organisation's automation programme decision have not occurred.</p>
+          <p>EXECUTIVE REVIEW: {executiveReview.step === 'review_complete' ? 'COMPLETE' : executiveReview.active ? 'IN PROGRESS' : 'READY'}</p>
+          <p>{executiveReview.fullAutomationRolloutStarted ? 'Management has started the automation-first rollout with governed exceptions.' : 'The organisational programme decision is separate from this source repair.'}</p>
         </>}
       </div>
       {clarification ? <button onClick={onClarify} className="w-full py-3 rounded bg-indigo-600 hover:bg-indigo-500 text-white">REQUEST SUPPLIER CLARIFICATION</button> :
