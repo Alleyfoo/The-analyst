@@ -51,3 +51,7 @@ A second interval writes `JSON.stringify(stateRef.current)` every two seconds un
 ## Minigame integration
 
 `App` keeps the eight minigame components mounted with `active` flags. Each generates its own board and calls `onComplete` (Spaghetti uses incremental `onClean`). App connects these to `complete*`/`cleanSpaghettiStrand` actions in the hook. The hook applies the real rewards, resource checks, clamps and meeting contributions; component copy alone is not authoritative. Mode toggles generally reject while a blocking task exists. Results are not automatically a chapter transition. Active mode flags survive saves but local puzzle progress does not.
+
+## Desktop layout correction — current presentation (2026-10-04)
+
+`App.tsx` retains the 3/5/4 grid but now composes compact `DataStream`, `WorkstationNavigation` and selected `Workstation` content in the left column. `OperationsStatus` presents the existing expansion/status JSX in the center, independently scrollable; `DashboardPanel` remains on the right unchanged. App owns the single local `activeWorkstationTab`; navigation and content share it. Tab scrolls use bounded flex/absolute containers with min-h-0, and narrow-column controls stack responsively. No engine, guard, reward, timer or persistence change accompanies this extraction. Topbar z20/main grid z10/modal z50 ordering is retained.

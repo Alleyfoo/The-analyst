@@ -42,15 +42,15 @@ export const DataStream: React.FC<Props> = ({ rawData, rate, maxStorage = 100, p
   const isLosingData = packetLoss > 0;
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 border-r border-slate-800 relative overflow-hidden">
-      <div className="p-4 border-b border-slate-800 bg-slate-900/50">
+    <div role="region" aria-label="Data ingestion" className="flex flex-col shrink-0 bg-slate-950 relative overflow-hidden">
+      <div className="p-3 border-b border-slate-800 bg-slate-900/50">
         <h2 className="text-xs font-bold uppercase text-slate-400 tracking-widest flex items-center gap-2">
           <Database size={14} />
           Data Ingestion
         </h2>
       </div>
 
-      <div className="flex-1 relative p-6 flex flex-col justify-center items-center space-y-8">
+      <div className="relative p-3 flex flex-col items-center gap-2">
         
         {/* Boot Overlay */}
         <AnimatePresence>
@@ -76,61 +76,33 @@ export const DataStream: React.FC<Props> = ({ rawData, rate, maxStorage = 100, p
            ))}
         </div>
 
-        {/* Server Icon Status */}
-        <div className="z-10 text-center relative">
-            {isLosingData && (
-                 <motion.div 
-                    animate={{ opacity: [0, 1, 0] }}
-                    transition={{ duration: 0.5, repeat: Infinity }}
-                    className="absolute -top-6 left-1/2 -translate-x-1/2 text-red-500 font-bold font-mono text-xs flex items-center gap-1"
-                 >
-                    <AlertOctagon size={12} /> PACKET LOSS
-                 </motion.div>
-            )}
-            
-            <div className="mb-2 flex justify-center">
-                <div className="relative">
-                    <Server 
-                        size={48} 
-                        strokeWidth={1} 
-                        className={clsx("transition-colors duration-500", isCritical ? "text-red-400" : "text-slate-600")} 
-                    />
-                    {/* Activity LED */}
-                    <motion.div 
-                        className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500"
-                        animate={{ opacity: [0.2, 1, 0.2] }}
-                        transition={{ duration: 0.1, repeat: Infinity }}
-                    />
-                </div>
-            </div>
-            
-            <div className={clsx("text-4xl font-mono font-bold mb-1 transition-colors", isCritical ? "text-red-100" : "text-slate-100")}>
+        <div className="z-10 w-full relative space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className={clsx("text-2xl font-mono font-bold", isCritical ? "text-red-100" : "text-slate-100")}>
                 {Math.floor(rawData).toLocaleString()}
+              </div>
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider">Raw Units Buffered</div>
             </div>
-            <div className="text-xs text-slate-500 uppercase tracking-wider mb-4">Raw Units Buffered</div>
-            
-            {/* Storage Bar */}
-            <div className="w-48 bg-slate-900 border border-slate-800 h-3 rounded-full overflow-hidden relative mx-auto mb-2">
-                 <motion.div 
-                    className={clsx("h-full", isCritical ? "bg-red-500" : "bg-blue-500")}
-                    animate={{ width: `${percentageFull}%` }}
-                    transition={{ type: "spring", stiffness: 50 }}
-                 />
+            <div className="text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded flex items-center gap-2">
+              <Server size={16} className={isCritical ? "text-red-400" : "text-slate-500"} />
+              +{rate.toFixed(1)} / sec
             </div>
-            <div className="text-[10px] font-mono text-slate-500 flex justify-between w-48 mx-auto">
-                <span>0</span>
-                <span>{maxStorage.toLocaleString()} CAP</span>
-            </div>
-
-            <div className="mt-4 text-xs font-mono text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded inline-block">
-                +{rate.toFixed(1)} / sec
-            </div>
+          </div>
+          {isLosingData && <div className="text-red-500 font-bold font-mono text-xs flex items-center gap-1"><AlertOctagon size={12} /> PACKET LOSS</div>}
+          <div className="bg-slate-900 border border-slate-800 h-2 rounded-full overflow-hidden">
+            <motion.div className={clsx("h-full", isCritical ? "bg-red-500" : "bg-blue-500")}
+              animate={{ width: `${percentageFull}%` }} transition={{ type: "spring", stiffness: 50 }} />
+          </div>
+          <div className="text-[10px] font-mono text-slate-500 flex justify-between">
+            <span>0</span><span>{maxStorage.toLocaleString()} CAP</span>
+          </div>
         </div>
 
         {/* Visual Representations of source types */}
         <div className="w-full grid grid-cols-2 gap-2 opacity-50">
-            <div className="bg-slate-900 p-3 rounded border border-slate-800 flex items-center gap-3">
-                <FileSpreadsheet className="text-green-600" size={20} />
+            <div className="bg-slate-900 p-1 rounded border border-slate-800 flex items-center gap-3">
+                <FileSpreadsheet className="text-green-600" size={14} />
                 <div className="h-1.5 w-full bg-slate-800 rounded overflow-hidden">
                     <motion.div 
                         className="h-full bg-green-600"
@@ -139,8 +111,8 @@ export const DataStream: React.FC<Props> = ({ rawData, rate, maxStorage = 100, p
                     />
                 </div>
             </div>
-            <div className="bg-slate-900 p-3 rounded border border-slate-800 flex items-center gap-3">
-                <FileJson className="text-yellow-600" size={20} />
+            <div className="bg-slate-900 p-1 rounded border border-slate-800 flex items-center gap-3">
+                <FileJson className="text-yellow-600" size={14} />
                 <div className="h-1.5 w-full bg-slate-800 rounded overflow-hidden">
                     <motion.div 
                         className="h-full bg-yellow-600"
@@ -153,7 +125,7 @@ export const DataStream: React.FC<Props> = ({ rawData, rate, maxStorage = 100, p
       </div>
       
       {/* Bottom info */}
-      <div className="p-4 border-t border-slate-800 text-[10px] text-slate-600 font-mono">
+      <div className="p-2 border-t border-slate-800 text-[10px] text-slate-600 font-mono">
         <div className="flex justify-between">
              <span>STREAM: {isLosingData ? <span className="text-red-500 font-bold">UNSTABLE</span> : "CONNECTED"}</span>
              <span>CAPACITY: {percentageFull.toFixed(1)}%</span>

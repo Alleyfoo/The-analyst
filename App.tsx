@@ -3,6 +3,8 @@ import { useGameEngine } from './hooks/useGameEngine';
 import { WorldStats } from './components/WorldStats';
 import { DataStream } from './components/DataStream';
 import { Workstation } from './components/Workstation';
+import { OperationsStatus } from './components/OperationsStatus';
+import { WorkstationNavigation, WorkstationTab } from './components/WorkstationNavigation';
 import { DashboardPanel } from './components/DashboardPanel';
 import { EventModal } from './components/EventModal';
 import { ProductWritePolicyEditor } from './components/ProductWritePolicyEditor';
@@ -32,6 +34,7 @@ import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
   const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, sourceRemediationAvailable, executiveReviewAvailable, expansionEndingReady, expansionRoleAvailable, accessMatrixAvailable, expansionNewGameAvailable } = useGameEngine();
+  const [activeWorkstationTab, setActiveWorkstationTab] = useState<WorkstationTab>('ops');
   const [roleOpen, setRoleOpen] = useState(false);
   const [matrixOpen, setMatrixOpen] = useState(false);
   useEffect(() => { if (!expansionNewGameAvailable) setRoleOpen(false); }, [expansionNewGameAvailable]);
@@ -272,21 +275,18 @@ const App: React.FC = () => {
       />
 
       {/* Main Grid */}
-      <div className="flex-1 grid grid-cols-12 overflow-hidden relative z-10">
+      <div className="flex-1 min-h-0 grid grid-cols-12 overflow-hidden relative z-10">
         
-        {/* Left: Raw Data Stream */}
-        <div className="col-span-3 h-full">
+        {/* Left: Compact ingestion and workstation */}
+        <div className="col-span-3 min-h-0 min-w-0 flex flex-col border-r border-slate-800">
             <DataStream 
                 rawData={state.rawData} 
                 rate={state.rawDataRate} 
                 maxStorage={state.maxStorage}
                 packetLoss={state.packetLoss}
             />
-        </div>
-
-        {/* Center: Workstation */}
-        <div className="col-span-5 h-full">
-            <Workstation 
+            <WorkstationNavigation activeTab={activeWorkstationTab} onSelectTab={setActiveWorkstationTab} />
+            <Workstation activeTab={activeWorkstationTab}
                 state={state} 
                 onManualClean={actions.manualClean}
                 onManualAnalyze={actions.manualAnalyze}
@@ -304,6 +304,15 @@ const App: React.FC = () => {
                 onHardReset={actions.hardReset}
                 onTogglePDF={actions.togglePDFMode}
                 onVisitCoffee={actions.startCoffeeBreak}
+                postGovernNewGameAvailable={expansionNewGameAvailable && state.expansionEnding.route === 'govern_machine'}
+                onGovernNewGame={() => setRoleOpen(true)}
+            />
+        </div>
+
+        {/* Center: Operational status */}
+        <div className="col-span-5 min-h-0 min-w-0">
+            <OperationsStatus
+                state={state}
                 pilotIntroduction={pilotIntroduction}
                 onReviewPilot={() => setPilotOpen(true)}
                 aiReviewAvailable={aiReviewAvailable}
@@ -345,7 +354,7 @@ const App: React.FC = () => {
         </div>
 
         {/* Right: Output Dashboard */}
-        <div className="col-span-4 h-full">
+        <div className="col-span-4 min-h-0 min-w-0">
             <DashboardPanel state={state} />
         </div>
 
