@@ -1,4 +1,4 @@
-// Focused S0-S8/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
+// Focused S0-S9/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
 // Browser smoke separately verifies actual rendering and persistence.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -8,6 +8,7 @@ const cp = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const ts = require(path.join(root, 'node_modules/typescript'));
 const baseline = '1263845279e9afd65ac05a6a1ac809e9bc70ee3c';
+const emptyProductWriteQueue = {active:false,pending:0,completed:0,totalArrived:0,nextArrivalTick:0,arrivalIntervalTicks:0,peakPending:0};
 const purchases = { pandas_scripts: true, sql_optimization: true, local_server: true };
 
 function mount(seed = null, original = false) {
@@ -76,6 +77,9 @@ function mount(seed = null, original = false) {
     schemaUpdate: () => api.schemaUpdate,
     connectedUpdate: () => api.connectedUpdate,
     writeUpdate: () => api.writeUpdate,
+    writeQueueUpdate: () => api.writeQueueUpdate,
+    writeQueueAvailable: () => api.productWriteQueueAvailable,
+    writeProposal: () => api.productWriteProposal && JSON.parse(JSON.stringify(api.productWriteProposal)),
     writeAvailable: () => api.productWriteAvailable,
     writeAttempt: () => api.productWriteAttempt && JSON.parse(JSON.stringify(api.productWriteAttempt)),
     writeRecords: () => JSON.parse(JSON.stringify(api.productWriteRecords)),
@@ -597,7 +601,7 @@ console.log('PASS S6: exact eligibility/defaults/deferral, two finite scales, is
 
 // S7: one local read-only source-context batch; S6 experience stays separate.
 {
-const emptyWrite={writeUses:0,productWritePilot:{active:false,pending:0,completed:0,total:0}};
+const emptyWrite={writeUses:0,productWriteQueue:emptyProductWriteQueue,productWritePilot:{active:false,pending:0,completed:0,total:0}};
 const disconnected={productDb:{connected:false,access:'none'},readUses:0,mappingBatch:{active:false,completed:false},...emptyWrite};
 assert.deepEqual(mount().state().connectedEnterprise,disconnected);
 assert.deepEqual(mount({connectedEnterprise:{productDb:{connected:'true',access:'read'},readUses:-1,mappingBatch:{active:1,completed:'true'}}}).state().connectedEnterprise,disconnected);
@@ -642,7 +646,7 @@ console.log('PASS S7: exact S6-proof eligibility, offer/deferral, READ-only conn
 // S8: one bounded, deterministic five-write pilot with human approval for each change.
 {
 const emptyPilot={active:false,pending:0,completed:0,total:0};
-const connected={productDb:{connected:true,access:'read'},readUses:1,mappingBatch:{active:false,completed:true},writeUses:0,productWritePilot:emptyPilot};
+const connected={productDb:{connected:true,access:'read'},readUses:1,mappingBatch:{active:false,completed:true},writeUses:0,productWriteQueue:emptyProductWriteQueue,productWritePilot:emptyPilot};
 const seed={rawData:100,cleanData:25,pu:100,tu:100,rawDataRate:0,cleanDataRate:0,metricRate:0,
  expansionProgress:{era:'connected_enterprise',transition:null},connectedEnterprise:connected,
  schemaBatchReview:{introduced:true,active:false,batchSize:12000,autoMapped:11995,exceptionsTotal:5,exceptionsResolved:5,batchesCompleted:2},
@@ -705,4 +709,57 @@ const reset=mount(endpoint);reset.action('hardReset');reset.timeout(2000);assert
 const badCounts=mount({...granted,connectedEnterprise:{...granted.connectedEnterprise,productWritePilot:{active:true,pending:99,completed:1,total:5},writeUses:-1}});assert.deepEqual(badCounts.state().connectedEnterprise.productWritePilot,emptyPilot);assert.equal(badCounts.state().connectedEnterprise.writeUses,0);assert.equal(badCounts.writeAvailable(),false);
 const mismatch=mount({...granted,connectedEnterprise:{...granted.connectedEnterprise,writeUses:3}});mismatch.action('openProductWriteReview');assert.equal(mismatch.writeAttempt(),null);
 console.log('PASS S8: exact S7 proof, bounded grant/no mutation or reward, five deterministic human-approved writes, issued/duplicate/stale/close/reload guards, persisted record projection/write proof, zero duplicate economics, explicit endpoint without establishment, background SQL and G1/reset.');
+}
+// S9: recurring validated writes expose per-item human approval pressure, never automate it.
+{
+const transition=step=>({era:'connected_enterprise',transition:{targetEra:'good_enough',step}});
+const connection={productDb:{connected:true,access:'read_write'},readUses:1,mappingBatch:{active:false,completed:true},writeUses:5,
+ productWritePilot:{active:false,pending:0,completed:5,total:5},productWriteQueue:emptyProductWriteQueue};
+const seed={rawData:100,cleanData:25,pu:100,tu:100,rawDataRate:0,cleanDataRate:0,metricRate:0,tick:500,
+ expansionProgress:transition('approval_rollout_ready'),connectedEnterprise:connection,
+ schemaBatchReview:{introduced:true,active:false,batchSize:12000,autoMapped:11995,exceptionsTotal:5,exceptionsResolved:5,batchesCompleted:2},
+ aiReviewQueue:{pending:0,completed:10,wave:3},aiReviewDemand:{active:true,arrivalIntervalTicks:20,nextArrivalTick:520,totalArrived:6,totalCompleted:10}};
+const queue=g=>g.state().connectedEnterprise.productWriteQueue;
+const economy=s=>Object.fromEntries(['rawData','cleanData','metrics','pu','tu','metricQuality','prestige','boardMeeting'].map(k=>[k,s[k]]));
+const approve=g=>{g.action('openNextProductWrite');const attempt=g.writeAttempt();assert(attempt);g.action('applyProductWrite',attempt.id);return attempt;};
+const defaultQueue=mount().state().connectedEnterprise.productWriteQueue;assert.deepEqual(defaultQueue,emptyProductWriteQueue);
+for(const invalid of [-1,1.5,'10',null,Infinity])for(const field of ['pending','completed','totalArrived','nextArrivalTick','arrivalIntervalTicks','peakPending']) {
+ const g=mount({connectedEnterprise:{productDb:{connected:true,access:'read'},productWriteQueue:{[field]:invalid}}});assert.equal(queue(g)[field],0);assert.equal(g.state().connectedEnterprise.productDb.access,'read');
+}
+for(const field of ['pending','peakPending']){const g=mount({connectedEnterprise:{productWriteQueue:{[field]:38}}});assert.equal(queue(g)[field],0);}
+for(const access of ['write','admin','READ_WRITE',null]){const g=mount({...seed,connectedEnterprise:{...connection,productDb:{connected:true,access},productWriteQueue:{active:true,pending:12}}});assert.equal(g.state().connectedEnterprise.productDb.access,'none');assert.equal(g.writeQueueUpdate().step,null);}
+for(const era of ['analyst','automation','ai_pilot','acceleration','good_enough']){const g=mount({...seed,expansionProgress:{...seed.expansionProgress,era}}),before=g.state();g.action('acknowledgeWriteQueueUpdate','approval_rollout_ready');g.action('openNextProductWrite');assert.deepEqual(g.state(),before);assert.equal(g.writeQueueUpdate().step,null);}
+for(const step of ['write_access_offer','write_pilot_active','write_pilot_success','other']){const g=mount({...seed,expansionProgress:transition(step)}),before=g.state();g.action('acknowledgeWriteQueueUpdate','approval_rollout_ready');assert.deepEqual(g.state(),before);}
+for(const patch of [{productDb:{connected:false,access:'none'}},{productDb:{connected:true,access:'read'}},{writeUses:4},{productWritePilot:{active:true,pending:1,completed:4,total:5}},{productWritePilot:{active:false,pending:1,completed:4,total:5}}]){const g=mount({...seed,connectedEnterprise:{...connection,...patch}}),before=g.state();g.action('acknowledgeWriteQueueUpdate','approval_rollout_ready');assert.deepEqual(g.state(),before);assert.equal(g.writeQueueUpdate().step,null);}
+const offer=mount(seed);assert.equal(offer.writeQueueUpdate().step,'approval_rollout_ready');ticks(offer,30);assert.deepEqual(queue(offer),emptyProductWriteQueue);assert.equal(offer.state().connectedEnterprise.writeUses,5);assert.deepEqual(mount(offer.save()).state().expansionProgress,transition('approval_rollout_ready'));
+const blockers=['pandasMode','sqlMode','spaghettiMode','modelMode','miningMode','flowMode','buzzwordMode','pdfMode','isAscending'].map(k=>({[k]:true})).concat([{coffeeBreak:{active:true}},{boardMeeting:{active:true}},{activeEvents:[{id:'storage_full_warning'}]},{blockingTask:{name:'Busy'}}]);
+for(const block of blockers){const g=mount({...seed,...block}),before=g.state();g.action('acknowledgeWriteQueueUpdate','approval_rollout_ready');assert.deepEqual(g.state(),before);}
+const game=mount(seed),beforeRollout=game.state();game.action('acknowledgeWriteQueueUpdate','approval_rollout_ready');assert.deepEqual(queue(game),{active:true,pending:12,completed:0,totalArrived:0,nextArrivalTick:510,arrivalIntervalTicks:10,peakPending:12});assert.deepEqual(game.state().expansionProgress,transition('approval_queue_active'));assert.deepEqual(economy(game.state()),economy(beforeRollout));assert.equal(game.state().connectedEnterprise.writeUses,5);assert.deepEqual(game.state().logs,beforeRollout.logs);
+const once=game.state();game.action('acknowledgeWriteQueueUpdate','approval_rollout_ready');game.action('establishExpansionEra','good_enough');assert.deepEqual(game.state(),once);
+const rolled=game.save();ticks(game,9);assert.equal(queue(game).pending,12);game.tick();assert.equal(queue(game).pending,13);assert.equal(queue(game).totalArrived,1);assert.equal(queue(game).nextArrivalTick,520);assert.equal(game.state().connectedEnterprise.writeUses,5);
+const deterministic=mount(rolled);ticks(deterministic,10);assert.deepEqual(queue(deterministic),queue(game));
+const frozen=mount({...rolled,isAscending:true});ticks(frozen,20);assert.deepEqual(queue(frozen),rolled.connectedEnterprise.productWriteQueue);
+const busy=mount({...rolled,blockingTask:{name:'Long task',startTick:500,durationTicks:1000,chatId:'none',responseIndex:0}});ticks(busy,20);assert.equal(queue(busy).pending,14,'existing busy work does not stop routing');
+for(const block of blockers){const g=mount({...rolled,...block}),before=g.state();g.action('openNextProductWrite');assert.equal(g.writeAttempt(),null);assert.deepEqual(g.state(),before);}
+const unissued=game.state();game.action('applyProductWrite',1);assert.deepEqual(game.state(),unissued);
+game.action('openNextProductWrite');const first=game.writeAttempt();assert.equal(first.kind,'queue');assert.equal(first.index,0);const proposal=game.writeProposal();assert.deepEqual(proposal,{record:'P-W00000',field:'Width',current:'45 cm',proposed:45});const viewing=game.state();game.action('openNextProductWrite');game.action('openProductWriteReview');assert.deepEqual(game.state(),viewing);assert.deepEqual(game.writeAttempt(),first);
+ticks(game,20);assert.equal(queue(game).pending,15);assert.equal(game.state().aiReviewQueue.pending,1);assert.deepEqual(game.writeAttempt(),first);assert.deepEqual(game.writeProposal(),proposal);
+const shownReload=mount(game.save());assert.equal(shownReload.writeAttempt(),null);const shownState=shownReload.state();shownReload.action('applyProductWrite',first.id);assert.deepEqual(shownReload.state(),shownState);shownReload.action('openNextProductWrite');assert.deepEqual(shownReload.writeProposal(),proposal);
+game.action('closeProductWriteReview',first.id);const closed=game.state();game.action('applyProductWrite',first.id);assert.deepEqual(game.state(),closed);game.action('openNextProductWrite');const retry=game.writeAttempt();assert.notEqual(retry.id,first.id);game.action('applyProductWrite',first.id);assert.equal(queue(game).completed,0);
+const beforeApproval=game.state();game.action('applyProductWrite',retry.id);const applied=game.state();assert.equal(queue(game).pending,14);assert.equal(queue(game).completed,1);assert.equal(applied.connectedEnterprise.writeUses,6);assert.equal(game.writeAttempt(),null);assert.deepEqual(economy(applied),economy(beforeApproval));assert.deepEqual(applied.connectedEnterprise.productWritePilot,connection.productWritePilot);assert.deepEqual(applied.schemaBatchReview,seed.schemaBatchReview);assert.match(applied.logs.at(-1).text,/Product DB update applied: P-W00000.Width/);game.action('applyProductWrite',retry.id);assert.deepEqual(game.state(),applied);
+const resumed=mount(game.save());resumed.action('openNextProductWrite');assert.equal(resumed.writeAttempt().index,1);assert.equal(resumed.writeProposal().record,'P-W00001');assert.equal(resumed.writeProposal().field,'Colour');resumed.action('closeProductWriteReview',resumed.writeAttempt().id);
+const peak=mount(rolled);ticks(peak,60);assert.equal(queue(peak).pending,18);assert.equal(queue(peak).peakPending,18);assert.equal(peak.state().expansionProgress.transition.step,'approval_queue_active','arrivals alone are not approval proof');for(let i=0;i<4;i++)approve(peak);assert.equal(peak.state().expansionProgress.transition.step,'approval_queue_active');approve(peak);assert.equal(peak.state().expansionProgress.transition.step,'approval_bottleneck_visible');assert.equal(queue(peak).active,true);
+const fast=mount(rolled);for(let i=0;i<5;i++)approve(fast);assert.equal(fast.state().expansionProgress.transition.step,'approval_queue_active');ticks(fast,100);assert.equal(queue(fast).totalArrived,10);assert(queue(fast).peakPending<18);assert.equal(fast.state().expansionProgress.transition.step,'approval_bottleneck_visible','fast-review fallback');
+const arrivalsFirst=mount(rolled);ticks(arrivalsFirst,100);for(let i=0;i<4;i++)approve(arrivalsFirst);assert.equal(arrivalsFirst.state().expansionProgress.transition.step,'approval_queue_active');approve(arrivalsFirst);assert.equal(arrivalsFirst.state().expansionProgress.transition.step,'approval_bottleneck_visible');
+assert.equal(peak.writeQueueUpdate().step,'approval_bottleneck_visible');const bottleReload=mount(peak.save());assert.equal(bottleReload.writeQueueUpdate().step,'approval_bottleneck_visible');ticks(bottleReload,10);assert.equal(queue(bottleReload).totalArrived,queue(peak).totalArrived+1);assert.equal(bottleReload.state().expansionProgress.transition.step,'approval_bottleneck_visible');approve(bottleReload);assert.equal(bottleReload.state().expansionProgress.transition.step,'approval_bottleneck_visible');
+for(const block of blockers){const g=mount({...peak.save(),...block}),before=g.state();g.action('acknowledgeWriteQueueUpdate','approval_bottleneck_visible');assert.deepEqual(g.state(),before);}
+const beforeEndpoint=peak.state();peak.action('acknowledgeWriteQueueUpdate','approval_bottleneck_visible');assert.deepEqual(peak.state().expansionProgress,transition('approval_policy_offer'));assert.deepEqual(peak.state().connectedEnterprise,beforeEndpoint.connectedEnterprise);const endpoint=peak.save();peak.action('acknowledgeWriteQueueUpdate','approval_bottleneck_visible');peak.action('establishExpansionEra','good_enough');assert.deepEqual(peak.state(),endpoint);const endReload=mount(endpoint);ticks(endReload,10);assert.equal(queue(endReload).totalArrived,endpoint.connectedEnterprise.productWriteQueue.totalArrived+1);approve(endReload);assert.equal(endReload.state().expansionProgress.transition.step,'approval_policy_offer');
+const crossProof=mount({...rolled,connectedEnterprise:{...connection,writeUses:10,productWriteQueue:{...rolled.connectedEnterprise.productWriteQueue,pending:16,completed:5,totalArrived:9,peakPending:17}}});crossProof.action('openNextProductWrite');const held=crossProof.writeAttempt(),heldProposal=crossProof.writeProposal();ticks(crossProof,10);assert.equal(crossProof.state().expansionProgress.transition.step,'approval_bottleneck_visible');assert.deepEqual(crossProof.writeProposal(),heldProposal);crossProof.action('applyProductWrite',held.id);assert.equal(queue(crossProof).completed,6,'proof arrival cannot invalidate issued approval');
+const capped=mount(rolled),reference=mount({...rolled,connectedEnterprise:{...rolled.connectedEnterprise,productWriteQueue:emptyProductWriteQueue}});ticks(capped,280);ticks(reference,280);assert.equal(queue(capped).pending,37);assert.equal(queue(capped).totalArrived,25);assert.equal(queue(capped).peakPending,37);assert.equal(queue(capped).completed,0);assert.equal(capped.state().connectedEnterprise.writeUses,5);const capState=capped.state(),expected=reference.state();delete capState.connectedEnterprise.productWriteQueue;delete expected.connectedEnterprise.productWriteQueue;assert.deepEqual(capState,expected,'full queue adds no penalties or other gameplay changes');approve(capped);assert.equal(queue(capped).pending,36);ticks(capped,10);assert.equal(queue(capped).pending,37);assert.equal(queue(capped).totalArrived,26);
+const overdue=mount({...rolled,tick:10000});assert.equal(queue(overdue).pending,12,'reload performs no offline arrivals');overdue.tick();assert.equal(queue(overdue).pending,13,'one overdue opportunity, no catch-up loop');assert.equal(queue(overdue).nextArrivalTick,10011);
+const cycled=mount(rolled),names=[];for(let i=0;i<7;i++){cycled.action('openNextProductWrite');const p=cycled.writeProposal();names.push(p.field);assert.equal(p.record,`P-W${String(i).padStart(5,'0')}`);cycled.action('applyProductWrite',cycled.writeAttempt().id);}assert.deepEqual(names,['Width','Colour','SupplierCode','Active','Category','Width','Colour']);assert.equal(queue(cycled).completed,7);assert.equal(cycled.state().connectedEnterprise.writeUses,12);
+const empty=mount({...rolled,connectedEnterprise:{...connection,writeUses:17,productWriteQueue:{...rolled.connectedEnterprise.productWriteQueue,pending:0,completed:12}}});empty.action('openNextProductWrite');assert.equal(empty.writeAttempt(),null);ticks(empty,10);assert.equal(queue(empty).pending,1);approve(empty);assert.equal(queue(empty).pending,0);
+for(const state of [seed,rolled,peak.save(),endpoint]){const g=mount(state),before=g.state();assert(g.deferred());g.purchase('project_omniscience');g.action('ascend');assert.deepEqual(g.state(),before);}
+const reset=mount(endpoint);reset.action('hardReset');reset.timeout(2000);assert.equal(reset.saved(),null);
+console.log('PASS S9: exact S8 endpoint/proof, opt-in rollout, 12/10-tick/37-cap deterministic routing without penalties/catch-up, validated template identities, issued single approvals/no reward, close/stale/reload guards, visible write+SQL arrivals, both proof paths/orders, retained queue/manual authority at policy endpoint and G1/reset.');
 }

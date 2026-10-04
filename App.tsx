@@ -25,7 +25,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable } = useGameEngine();
   const [pilotOpen, setPilotOpen] = useState(false);
   useEffect(() => {
     if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready' || pilotIntroduction.step === 'rollout_review') setPilotOpen(false);
@@ -204,8 +204,15 @@ const App: React.FC = () => {
             if (step === 'write_pilot_success') { actions.acknowledgeWriteResult(); setPilotOpen(false); }
           }} onLater={() => setPilotOpen(false)} />
       )}
-      {productWriteAttempt && <ProductWriteReview attempt={productWriteAttempt}
-        pending={state.connectedEnterprise.productWritePilot.pending} sqlPending={state.aiReviewQueue.pending}
+      {pilotOpen && writeQueueUpdate.step && writeQueueUpdate.available && (
+        <AIPilotIntroduction step={writeQueueUpdate.step} writePending={state.connectedEnterprise.productWriteQueue.pending}
+          onContinue={step => {
+            if (step === 'approval_rollout_ready' || step === 'approval_bottleneck_visible') { actions.acknowledgeWriteQueueUpdate(step); setPilotOpen(false); }
+          }} onLater={() => setPilotOpen(false)} />
+      )}
+      {productWriteAttempt && productWriteProposal && <ProductWriteReview attempt={productWriteAttempt} proposal={productWriteProposal}
+        queueMode={productWriteAttempt.kind === 'queue'}
+        pending={productWriteAttempt.kind === 'queue' ? state.connectedEnterprise.productWriteQueue.pending : state.connectedEnterprise.productWritePilot.pending} sqlPending={state.aiReviewQueue.pending}
         onApply={actions.applyProductWrite} onLater={actions.closeProductWriteReview} />}
 
       {/* Top Bar */}
@@ -258,6 +265,9 @@ const App: React.FC = () => {
                 schemaUpdate={schemaUpdate}
                 schemaBatchAvailable={schemaBatchAvailable}
                 onReviewSchemaBatch={actions.openSchemaBatchReview}
+                writeQueueUpdate={writeQueueUpdate}
+                productWriteQueueAvailable={productWriteQueueAvailable}
+                onReviewNextWrite={actions.openNextProductWrite}
                 writeUpdate={writeUpdate}
                 productWriteAvailable={productWriteAvailable}
                 onReviewProductWrite={actions.openProductWriteReview}

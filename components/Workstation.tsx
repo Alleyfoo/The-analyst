@@ -39,6 +39,9 @@ interface Props {
   connectedMappingAvailable: boolean;
   writeUpdate: { step: 'write_access_offer' | 'write_pilot_success' | null; available: boolean };
   productWriteAvailable: boolean;
+  writeQueueUpdate: { step: 'approval_rollout_ready' | 'approval_bottleneck_visible' | null; available: boolean };
+  productWriteQueueAvailable: boolean;
+  onReviewNextWrite: () => void;
   onReviewProductWrite: () => void;
 }
 
@@ -73,7 +76,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite }) => {
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -213,6 +216,18 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
       )}
       {(connectedUpdate.step || state.connectedEnterprise.productDb.connected) && <div className="shrink-0 border-b border-blue-800/50 bg-blue-950/30 p-3 text-xs text-slate-300">
         {state.connectedEnterprise.productDb.connected && <p className="font-bold text-blue-200">CONNECTED SYSTEMS · Product DB · {state.connectedEnterprise.productDb.access === 'read_write' ? 'READ + WRITE · HUMAN APPROVAL REQUIRED' : 'READ ONLY'}</p>}
+        {writeQueueUpdate.step && <button onClick={onReviewPilot} disabled={!writeQueueUpdate.available}
+          className="mt-2 w-full py-2 border border-indigo-500 rounded text-indigo-200 disabled:opacity-40 hover:bg-indigo-900/30">
+          {writeQueueUpdate.step === 'approval_rollout_ready' ? 'Review standard writeback' : 'Review approval capacity'}
+        </button>}
+        {state.connectedEnterprise.productWriteQueue.active && <div className="mt-2 space-y-1">
+          <p className="font-bold text-blue-200">PRODUCT DB WRITE APPROVALS</p>
+          <p>{state.connectedEnterprise.productWriteQueue.pending} pending · {state.connectedEnterprise.productWriteQueue.completed} approved</p>
+          <p>ROUTING: ACTIVE · VALIDATED WRITES · HUMAN APPROVAL: REQUIRED</p>
+          <p>Next write: ~{Math.ceil(Math.max(0, state.connectedEnterprise.productWriteQueue.nextArrivalTick - state.tick) * TICK_RATE_MS / 1000)}s</p>
+          <button onClick={onReviewNextWrite} disabled={!productWriteQueueAvailable}
+            className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 disabled:opacity-40 hover:bg-blue-900/30">REVIEW NEXT WRITE</button>
+        </div>}
         {writeUpdate.step && <button onClick={onReviewPilot} disabled={!writeUpdate.available}
           className="mt-2 w-full py-2 border border-indigo-500 rounded text-indigo-200 disabled:opacity-40 hover:bg-indigo-900/30">
           {writeUpdate.step === 'write_access_offer' ? 'Review writeback access' : 'Review write pilot result'}

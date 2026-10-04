@@ -690,3 +690,12 @@ export const PRODUCT_WRITE_PROPOSALS = [
   { record: 'P-1045', field: 'Active', current: 'yes', proposed: true },
   { record: 'P-1046', field: 'Category', current: 'desk accessories', proposed: 'Desk Accessories' },
 ] as const;
+
+// S9 pacing only; these are not global approval-policy settings.
+export const PRODUCT_WRITE_QUEUE_INITIAL = 12;
+export const PRODUCT_WRITE_QUEUE_INTERVAL_TICKS = 10;
+export const PRODUCT_WRITE_QUEUE_CAP = 37;
+export const getOperationalProductWriteProposal = (index: number) => ({
+  ...PRODUCT_WRITE_PROPOSALS[index % PRODUCT_WRITE_PROPOSALS.length],
+  record: `P-W${String(index).padStart(5, '0')}`,
+});

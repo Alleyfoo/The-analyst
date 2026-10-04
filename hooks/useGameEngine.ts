@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS } from '../constants';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -24,7 +24,7 @@ const hasAcceleratedAIReviewDemand = (state: GameState) =>
        ['read_connection_offer', 'product_db_read_connected', 'connected_mapping_success'].includes(state.expansionProgress.transition.step)))) ||
     (state.expansionProgress.era === 'connected_enterprise' && (state.expansionProgress.transition === null ||
       (state.expansionProgress.transition.targetEra === 'good_enough' &&
-       ['write_access_offer', 'write_pilot_active', 'write_pilot_success', 'approval_rollout_ready'].includes(state.expansionProgress.transition.step)))) ||
+       ['write_access_offer', 'write_pilot_active', 'write_pilot_success', 'approval_rollout_ready', 'approval_queue_active', 'approval_bottleneck_visible', 'approval_policy_offer'].includes(state.expansionProgress.transition.step)))) ||
     (state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition?.targetEra === 'acceleration' &&
      (state.expansionProgress.transition.step === 'accelerated_routing_active' || state.expansionProgress.transition.step === 'review_bottleneck_visible'));
 
@@ -110,7 +110,40 @@ const isWritePilotActive = (state: GameState) => state.expansionProgress.era ===
     state.connectedEnterprise.productWritePilot.completed + state.connectedEnterprise.productWritePilot.pending === 5 &&
     state.connectedEnterprise.writeUses === state.connectedEnterprise.productWritePilot.completed;
 
-type ProductWriteAttempt = { id: number; index: number };
+const hasWritePilotProof = (state: GameState) => state.connectedEnterprise.productDb.connected &&
+    state.connectedEnterprise.productDb.access === 'read_write' && !state.connectedEnterprise.productWritePilot.active &&
+    state.connectedEnterprise.productWritePilot.completed === 5 && state.connectedEnterprise.productWritePilot.pending === 0 &&
+    state.connectedEnterprise.productWritePilot.total === 5 && state.connectedEnterprise.writeUses >= 5;
+
+const isProductWriteQueueActive = (state: GameState) => {
+    const queue = state.connectedEnterprise.productWriteQueue;
+    return state.expansionProgress.era === 'connected_enterprise' && state.expansionProgress.transition?.targetEra === 'good_enough' &&
+      ['approval_queue_active', 'approval_bottleneck_visible', 'approval_policy_offer'].includes(state.expansionProgress.transition.step) &&
+      hasWritePilotProof(state) && queue.active && queue.arrivalIntervalTicks === PRODUCT_WRITE_QUEUE_INTERVAL_TICKS &&
+      queue.pending <= PRODUCT_WRITE_QUEUE_CAP && queue.pending + queue.completed === PRODUCT_WRITE_QUEUE_INITIAL + queue.totalArrived &&
+      state.connectedEnterprise.writeUses >= 5 + queue.completed;
+};
+
+const productWritePressureProof = (state: GameState) => {
+    const queue = state.connectedEnterprise.productWriteQueue;
+    return isProductWriteQueueActive(state) && state.expansionProgress.transition?.step === 'approval_queue_active' &&
+      queue.completed >= 5 && (queue.peakPending >= 18 || queue.totalArrived >= 10)
+        ? { ...state.expansionProgress, transition: { targetEra: 'good_enough' as const, step: 'approval_bottleneck_visible' } }
+        : state.expansionProgress;
+};
+
+// One deterministic opportunity per engine interval; no offline catch-up or full-queue penalty.
+const arriveProductWrite = (prev: GameState, tick: number): Partial<GameState> => {
+    const queue = prev.connectedEnterprise.productWriteQueue;
+    if (prev.isAscending || !isProductWriteQueueActive(prev) || tick < queue.nextArrivalTick) return {};
+    const added = queue.pending < PRODUCT_WRITE_QUEUE_CAP ? 1 : 0;
+    const next = { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, productWriteQueue: { ...queue,
+      pending: queue.pending + added, totalArrived: queue.totalArrived + added, peakPending: Math.max(queue.peakPending, queue.pending + added),
+      nextArrivalTick: tick + PRODUCT_WRITE_QUEUE_INTERVAL_TICKS } } };
+    return { connectedEnterprise: next.connectedEnterprise, expansionProgress: productWritePressureProof(next) };
+};
+
+type ProductWriteAttempt = { id: number; index: number; kind: 'pilot' | 'queue' };
 
 const hydrateState = (parsed: any): GameState => {
     const savedWritePilot = parsed.connectedEnterprise?.productWritePilot;
@@ -127,6 +160,13 @@ const hydrateState = (parsed: any): GameState => {
                 access: parsed.connectedEnterprise?.productDb?.connected === true && ['read', 'read_write'].includes(parsed.connectedEnterprise.productDb.access) ? parsed.connectedEnterprise.productDb.access : 'none' },
             writeUses: Number.isSafeInteger(parsed.connectedEnterprise?.writeUses) && parsed.connectedEnterprise.writeUses >= 0 ? parsed.connectedEnterprise.writeUses : 0,
             productWritePilot: validWritePilot ? { active: savedWritePilot.active === true && savedWritePilot.pending > 0, pending: savedWritePilot.pending, completed: savedWritePilot.completed, total: 5 } : { ...INITIAL_STATE.connectedEnterprise.productWritePilot },
+            productWriteQueue: {
+                active: parsed.connectedEnterprise?.productWriteQueue?.active === true,
+                ...Object.fromEntries(['pending', 'completed', 'totalArrived', 'nextArrivalTick', 'arrivalIntervalTicks', 'peakPending'].map(key => [key,
+                  Number.isSafeInteger(parsed.connectedEnterprise?.productWriteQueue?.[key]) && parsed.connectedEnterprise.productWriteQueue[key] >= 0 &&
+                  (!['pending', 'peakPending'].includes(key) || parsed.connectedEnterprise.productWriteQueue[key] <= PRODUCT_WRITE_QUEUE_CAP)
+                    ? parsed.connectedEnterprise.productWriteQueue[key] : 0])),
+            },
             readUses: Number.isSafeInteger(parsed.connectedEnterprise?.readUses) && parsed.connectedEnterprise.readUses >= 0 ? parsed.connectedEnterprise.readUses : 0,
             mappingBatch: { active: parsed.connectedEnterprise?.mappingBatch?.active === true && parsed.connectedEnterprise.mappingBatch.completed !== true,
                 completed: parsed.connectedEnterprise?.mappingBatch?.completed === true },
@@ -660,7 +700,8 @@ export const useGameEngine = () => {
         blockingTask: blockingTask,
         rival: rival,
         ...stateDeltaFromTask,
-        ...arriveAIReview(prev, prev.tick + 1)
+        ...arriveAIReview(prev, prev.tick + 1),
+        ...arriveProductWrite(prev, prev.tick + 1)
       }));
 
     }, TICK_RATE_MS);
@@ -899,7 +940,15 @@ export const useGameEngine = () => {
   const openProductWriteReview = () => {
     const current = stateRef.current;
     if (!isWritePilotActive(current) || !canPresentPilotIntroduction(current)) return;
-    const attempt = { id: ++productWriteSequence.current, index: current.connectedEnterprise.productWritePilot.completed };
+    const attempt: ProductWriteAttempt = { id: ++productWriteSequence.current, kind: 'pilot', index: current.connectedEnterprise.productWritePilot.completed };
+    productWriteAttemptRef.current = attempt;
+    setProductWriteAttempt(attempt);
+  };
+
+  const openNextProductWrite = () => {
+    const current = stateRef.current;
+    if (!isProductWriteQueueActive(current) || current.connectedEnterprise.productWriteQueue.pending <= 0 || !canPresentPilotIntroduction(current)) return;
+    const attempt: ProductWriteAttempt = { id: ++productWriteSequence.current, kind: 'queue', index: current.connectedEnterprise.productWriteQueue.completed };
     productWriteAttemptRef.current = attempt;
     setProductWriteAttempt(attempt);
   };
@@ -917,6 +966,15 @@ export const useGameEngine = () => {
     productWriteAttemptRef.current = null;
     setProductWriteAttempt(null);
     setState(prev => {
+      if (attempt.kind === 'queue') {
+        const queue = prev.connectedEnterprise.productWriteQueue;
+        if (!isProductWriteQueueActive(prev) || !canPresentPilotIntroduction(prev, true) || queue.pending <= 0 || attempt.index !== queue.completed) return prev;
+        const proposal = getOperationalProductWriteProposal(attempt.index);
+        const next = { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, writeUses: prev.connectedEnterprise.writeUses + 1,
+          productWriteQueue: { ...queue, pending: queue.pending - 1, completed: queue.completed + 1 } },
+          logs: [...prev.logs, { id: Date.now(), text: `Product DB update applied: ${proposal.record}.${proposal.field} (${JSON.stringify(proposal.current)} → ${JSON.stringify(proposal.proposed)})`, type: 'success' as const, timestamp: Date.now() }] };
+        return { ...next, expansionProgress: productWritePressureProof(next) };
+      }
       if (!isWritePilotActive(prev) || !canPresentPilotIntroduction(prev, true) || attempt.index !== prev.connectedEnterprise.productWritePilot.completed) return prev;
       const proposal = PRODUCT_WRITE_PROPOSALS[attempt.index];
       if (!proposal) return prev;
@@ -932,6 +990,28 @@ export const useGameEngine = () => {
     setState(prev => {
       if (!canPresentPilotIntroduction(prev) || writeFeedbackStep(prev) !== 'write_pilot_success') return prev;
       return { ...prev, expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'good_enough', step: 'approval_rollout_ready' } } };
+    });
+  };
+
+  const writeQueueFeedbackStep = (snapshot: GameState): 'approval_rollout_ready' | 'approval_bottleneck_visible' | null => {
+    const transition = snapshot.expansionProgress.transition;
+    if (snapshot.expansionProgress.era !== 'connected_enterprise' || transition?.targetEra !== 'good_enough' || !hasWritePilotProof(snapshot)) return null;
+    const queue = snapshot.connectedEnterprise.productWriteQueue;
+    if (transition.step === 'approval_rollout_ready' && !queue.active && queue.pending === 0 && queue.completed === 0 && queue.totalArrived === 0) return 'approval_rollout_ready';
+    return transition.step === 'approval_bottleneck_visible' && isProductWriteQueueActive(snapshot) &&
+      queue.completed >= 5 && (queue.peakPending >= 18 || queue.totalArrived >= 10) ? 'approval_bottleneck_visible' : null;
+  };
+
+  const acknowledgeWriteQueueUpdate = (expectedStep: 'approval_rollout_ready' | 'approval_bottleneck_visible') => {
+    setState(prev => {
+      if (!canPresentPilotIntroduction(prev) || writeQueueFeedbackStep(prev) !== expectedStep) return prev;
+      if (expectedStep === 'approval_rollout_ready') {
+        return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, productWriteQueue: { active: true,
+          pending: PRODUCT_WRITE_QUEUE_INITIAL, completed: 0, totalArrived: 0, peakPending: PRODUCT_WRITE_QUEUE_INITIAL,
+          arrivalIntervalTicks: PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, nextArrivalTick: prev.tick + PRODUCT_WRITE_QUEUE_INTERVAL_TICKS } },
+          expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'good_enough', step: 'approval_queue_active' } } };
+      }
+      return { ...prev, expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'good_enough', step: 'approval_policy_offer' } } };
     });
   };
 
@@ -1489,6 +1569,10 @@ export const useGameEngine = () => {
     schemaBatchAvailable: isSchemaBatchActive(state) && state.rawData >= 20 && canPresentPilotIntroduction(state),
     connectedUpdate: { step: connectedFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     productWriteAttempt,
+    productWriteProposal: productWriteAttempt ? (productWriteAttempt.kind === 'queue'
+      ? getOperationalProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
+    writeQueueUpdate: { step: writeQueueFeedbackStep(state), available: canPresentPilotIntroduction(state) },
+    productWriteQueueAvailable: isProductWriteQueueActive(state) && state.connectedEnterprise.productWriteQueue.pending > 0 && canPresentPilotIntroduction(state),
     // Local simulated record values derive from the persisted applied prefix, never from logs.
     productWriteRecords: PRODUCT_WRITE_PROPOSALS.map((proposal, index) => ({ record: proposal.record, field: proposal.field,
       value: index < state.connectedEnterprise.productWritePilot.completed ? proposal.proposed : proposal.current })),
@@ -1507,6 +1591,7 @@ export const useGameEngine = () => {
       acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
       connectProductDb, acknowledgeConnectedResult,
       grantProductWrite, openProductWriteReview, closeProductWriteReview, applyProductWrite, acknowledgeWriteResult,
+      openNextProductWrite, acknowledgeWriteQueueUpdate,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,
