@@ -82,6 +82,8 @@ function mount(seed = null, original = false) {
     acceleration: () => api.accelerationUpdate,
     schemaUpdate: () => api.schemaUpdate,
     connectedUpdate: () => api.connectedUpdate,
+    omniscienceReady: () => api.omniscienceReady,
+    omniscienceAvailable: () => api.omniscienceAvailable,
     newGameAvailable: () => api.expansionNewGameAvailable,
     roleAvailable: () => api.expansionRoleAvailable,
     matrixAvailable: () => api.accessMatrixAvailable,
@@ -362,25 +364,26 @@ assert.equal(finalWave.state().expansionProgress.era, 'ai_pilot', 'no accelerati
 assert.deepEqual(finalWave.state().expansionProgress.transition, { targetEra: 'acceleration', step: 'continuous_demand_offer' });
 assert.equal(finalWave.state().aiReviewDemand.active, false, 'second wave stays finite until explicit acknowledgement');
 const baselineProgress = { era: 'analyst', transition: null };
+// Current finale no longer permits a score-only/pre-expansion shortcut.
 for (const tu of [99, 100, 135]) {
   const seed = { tu, pu: 10000, prestige: { level: 2, currency: 7 }, expansionProgress: baselineProgress };
-  const current = mount(seed), original = mount(seed, true);
-  assert.equal(current.deferred(), false);
-  for (const game of [current, original]) game.purchase('project_omniscience');
-  const actual = current.state(), expected = original.state(); delete actual.expansionEnding; delete expected.expansionEnding; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
-  assert.deepEqual(actual, expected, 'baseline purchase/cost/flag/log matches original at TU ' + tu);
+  const current = mount(seed), before = current.state();
+  assert.equal(current.omniscienceReady(), false); current.purchase('project_omniscience');
+  assert.deepEqual(current.state(), before, 'Neural Link/TU alone cannot bypass current-run governance');
   if (tu < 100) continue;
-  for (const game of [current, original]) { game.action('ascend'); assert.equal(game.rebooting(), true); game.timeout(3000); }
-  const currentNG = current.saved(), originalNG = original.saved(); delete currentNG.expansionEnding; delete currentNG.expansionProgress; delete currentNG.aiReviewQueue; delete currentNG.aiReviewDemand; delete currentNG.schemaBatchReview; delete currentNG.connectedEnterprise; delete originalNG.expansionEnding; delete originalNG.expansionProgress; delete originalNG.aiReviewQueue; delete originalNG.aiReviewDemand; delete originalNG.schemaBatchReview; delete originalNG.connectedEnterprise;
-  assert.deepEqual(currentNG, originalNG, 'baseline NG+ reset and prestige match original');
-  assert.equal(current.reloads(), original.reloads());
+  // Retained legacy reset action/formula is tested using an already-open legacy ending.
+  const legacy = { ...seed, tu: tu - 100, isAscending: true, upgrades: { project_omniscience: true } };
+  const now = mount(legacy), original = mount(legacy, true);
+  for (const game of [now, original]) { game.action('ascend'); assert.equal(game.rebooting(), true); game.timeout(3000); }
+  const currentNG = now.saved(), originalNG = original.saved();
+  for (const state of [currentNG, originalNG]) for (const key of ['expansionEnding','expansionProgress','aiReviewQueue','aiReviewDemand','schemaBatchReview','connectedEnterprise']) delete state[key];
+  assert.deepEqual(currentNG, originalNG, 'retained legacy NG+ reset/prestige matches original');
+  assert.equal(now.reloads(), original.reloads());
 }
-const sandbox = mount({ tu: 100, expansionProgress: baselineProgress });
-sandbox.purchase('project_omniscience'); sandbox.action('cancelAscension');
-assert.equal(sandbox.state().isAscending, false);
-assert.equal(sandbox.state().upgrades.project_omniscience, true);
+const sandbox = mount({ tu: 0, isAscending: true, upgrades: { project_omniscience: true }, expansionProgress: baselineProgress });
+sandbox.action('cancelAscension'); assert.equal(sandbox.state().isAscending, false);
 const sandboxBefore = sandbox.state(); sandbox.purchase('project_omniscience');
-assert.deepEqual(sandbox.state(), sandboxBefore, 'original one-shot sandbox quirk preserved');
+assert.deepEqual(sandbox.state(), sandboxBefore, 'retained legacy purchased flag cannot be paid twice');
 const gatedProgress = [progress('automation_recognized'), { era: 'analyst', transition: { targetEra: 'acceleration', step: 'future' } },
   ...['automation', 'ai_pilot', 'acceleration', 'connected_enterprise', 'good_enough', 'lightspeed', 'governance_crisis'].map(era => ({ era, transition: null })),
   ...['pilot_announced', 'pilot_ready', 'pilot_success', 'demand_pending', 'rollout_review', 'rollout_success'].map(progress)];
@@ -1038,6 +1041,20 @@ const endingState=g=>g.state().expansionEnding;
 const s16Seed={...completedSave,connectedEnterprise:{...completedSave.connectedEnterprise,executiveReview:completeExecutive}};
 const rules=mount(s16Seed).accessRules();assert.equal(rules.target.length,16);assert.equal(rules.dependencies.length,16);assert(rules.dependencies.every((j,i)=>Number.isInteger(j)&&j>=0&&j<16&&j!==i));assert.deepEqual(rules.scramble,[0,2,4,9,12]);assert.notDeepEqual(rules.start,rules.target);assert.equal(mount().health(rules.target),100);const swapped=[...rules.target];[swapped[0],swapped[1]]=[swapped[1],swapped[0]];assert.equal(swapped.reduce((a,b)=>a+b,0),rules.target.reduce((a,b)=>a+b,0));assert(mount().health(swapped)<100);
 assert.deepEqual(endingState(mount()),emptyEnding);
+// Book finale: one prior NG+ (positive Neural Link), current-run exact governance proof, and100TU.
+const solvedFinale = { ...s16Seed, expansionEnding: { route: 'govern_machine', accessMatrix: { active: true, cells: rules.target, moves: 15, stabilizedOnce: true } } };
+for (const level of [0,1,3]) for (const tu of [99,100,135]) {
+ const g=mount({...solvedFinale,tu,prestige:{level,currency:level,multiplier:1+level*.1,timestamp:0}}),before=g.state();
+ assert.equal(g.omniscienceReady(),level>0);assert.equal(g.omniscienceAvailable(),level>0&&tu>=100);g.purchase('project_omniscience');
+ if(level===0||tu<100)assert.deepEqual(g.state(),before);
+ else{assert.equal(g.state().isAscending,true);assert.equal(g.state().tu,tu-100);assert.equal(g.state().upgrades.project_omniscience,true);assert.deepEqual(g.state().expansionEnding,before.expansionEnding);assert.deepEqual(g.state().connectedEnterprise,before.connectedEnterprise);assert.deepEqual(g.state().prestige,before.prestige);assert.equal(g.rebooting(),false);const paid=g.state();g.purchase('project_omniscience');assert.deepEqual(g.state(),paid);assert(mount(g.save()).state().isAscending);}
+}
+for(const seed of [s16Seed,completedSave,{...solvedFinale,expansionEnding:{route:'govern_machine',accessMatrix:{active:true,cells:rules.start,moves:0,stabilizedOnce:false}}},{...solvedFinale,connectedEnterprise:{...solvedFinale.connectedEnterprise,executiveReview:emptyExecutive}},{...solvedFinale,expansionProgress:{era:'governance_crisis',transition:{targetEra:'governance_crisis',step:'future'}}}]){
+ const g=mount({...seed,tu:500,prestige:{level:1,currency:1,multiplier:1.1,timestamp:0}}),before=g.state();assert.equal(g.omniscienceReady(),false);g.purchase('project_omniscience');assert.deepEqual(g.state(),before);
+}
+for(const block of blockers){const g=mount({...solvedFinale,tu:100,prestige:{level:1,currency:1,multiplier:1.1,timestamp:0},...block}),before=g.state();assert.equal(g.omniscienceAvailable(),false);g.purchase('project_omniscience');assert.deepEqual(g.state(),before);}
+console.log('PASS Omniscience: no first-run/score-only/early-expansion/unsolved/missing-proof bypass; priorNG+ plus exact current governance,100TU and idle activity required; once-only purchase retains proofs/policy/prestige, no reset, legacy ending hydration preserved.');
+
 for(const seed of [repairSeed,completedSave,containedSave]){const g=mount(seed),before=g.state();assert.equal(g.roleAvailable(),false);g.action('acceptGovernanceRole','accept_governance');g.action('cycleAccessMatrixCell',0);g.action('rebootExpansionNewGame','reboot');assert.deepEqual(g.state(),before);assert.equal(g.rebooting(),false);}
 for(let mask=0;mask<16;mask++){
  const selected=classes.filter((_,i)=>mask&(1<<i)),source=mount(provenSeed(selected));for(const name of ['beginSourceRemediation','requestSupplierClarification','approveSourceWidthRule','reprocessSourceQuarantine',...reviewActions])source.action(name);const g=mount(source.save());assert(g.roleAvailable());const before=g.state();g.action('acceptGovernanceRole');g.action('acceptGovernanceRole','wrong');g.action('rebootExpansionNewGame');assert.deepEqual(g.state(),before);g.action('acceptGovernanceRole','accept_governance');assert.deepEqual(endingState(g),{route:'govern_machine',accessMatrix:{active:true,cells:rules.start,moves:0,stabilizedOnce:false}});assert.deepEqual({...g.state(),expansionEnding:emptyEnding},before);assert(g.matrixAvailable());assert.equal(g.roleAvailable(),false);

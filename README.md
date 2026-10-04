@@ -16,7 +16,7 @@ Start with spreadsheet software, clean incoming data and turn it into metrics. B
 
 **PU** measures how impressive your work looks to management and doubles as a spending currency. **TU** represents actual understanding, supported by better-quality metrics and honest responses. Let appearances run too far ahead of understanding and system entropy can rise.
 
-Original progression follows resource thresholds and upgrades, leading to the quiet Project: OMNISCIENCE book finale. The implemented AI rollout and governance expansion has its own progression and separate New Game+ option.
+Progression follows resource thresholds, upgrades and the implemented AI rollout/governance sequence. The quiet Project: OMNISCIENCE book finale unlocks after at least one New Game+ and stabilized governance in the current run. New Game+ remains a separate option.
 
 ## Minigames
 

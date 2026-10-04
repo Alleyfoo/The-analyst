@@ -60,3 +60,8 @@ A second interval writes `JSON.stringify(stateRef.current)` every two seconds un
 ## Original Omniscience finale — current presentation (2026-10-04)
 
 `App` now passes only `active={state.isAscending}` to `AscensionOverlay`. Its inner `OmniscienceFinale` presents authored deployment status/book copy and one READ button, then THE ANALYST COMPLETE. It has no timer, automatic close, reward, reset or engine callback. READ is local/unsaved; inactive unmounts the finale and reload of a saved `isAscending` ending shows READ again. The main-loop pause and original purchase/G1 authority remain unchanged. Legacy engine `ascend`/`cancelAscension` are retained but no longer presented here. `ExpansionEnding`/`AccessMatrix` and their dedicated confirmed NG+ are separate and unchanged. Earlier descriptions of original-screen NG+/Sandbox choices are historical.
+
+
+## Omniscience entry correction (2026-10-04)
+
+The quiet finale is now reachable after one prior NG+ and exact current-run governance completion. `useGameEngine::canCompleteOmniscience` reuses completed ending/matrix proof and positive Neural Link; `omniscienceReady`/`omniscienceAvailable` are derived outputs passed by App into Workstation. Prominent and upgrade-list deployment share authoritative purchase validation,100TU cost and existing activity guards. NG+ has a separate control. First-run/early-era purchases cannot skip the expansion. No save schema, new timer, reset formula, board mechanic or finale-copy change accompanies this gate repair.

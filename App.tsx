@@ -33,7 +33,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, sourceRemediationAvailable, executiveReviewAvailable, expansionEndingReady, expansionRoleAvailable, accessMatrixAvailable, expansionNewGameAvailable } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, sourceRemediationAvailable, executiveReviewAvailable, expansionEndingReady, expansionRoleAvailable, accessMatrixAvailable, expansionNewGameAvailable, omniscienceReady, omniscienceAvailable } = useGameEngine();
   const [activeWorkstationTab, setActiveWorkstationTab] = useState<WorkstationTab>('ops');
   const [roleOpen, setRoleOpen] = useState(false);
   const [matrixOpen, setMatrixOpen] = useState(false);
@@ -282,6 +282,8 @@ const App: React.FC = () => {
             />
             <WorkstationNavigation activeTab={activeWorkstationTab} onSelectTab={setActiveWorkstationTab} />
             <Workstation activeTab={activeWorkstationTab}
+                omniscienceReady={omniscienceReady}
+                omniscienceAvailable={omniscienceAvailable}
                 state={state} 
                 onManualClean={actions.manualClean}
                 onManualAnalyze={actions.manualAnalyze}

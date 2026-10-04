@@ -1,7 +1,7 @@
 import { WorkstationTab } from './WorkstationNavigation';
 import React, { useState, useEffect, useRef } from 'react';
 import { GameState, Upgrade, ResourceType, UpgradeCategory, LogMessage, CampaignType } from '../types';
-import { UPGRADES, checkUpgradeVisibility, isAscensionDeferred } from '../constants';
+import { UPGRADES, checkUpgradeVisibility } from '../constants';
 import { Filter, Activity, Lock, Cpu, Terminal as TerminalIcon, Users, Scale, FlaskConical, Briefcase, Server, Wand2, FileCode, Database, Brain, GitGraph, TrendingUp, DollarSign, Megaphone, Send, Smartphone, Tv, Zap, Infinity as InfinityIcon, Sparkles, FileText, Scan, Coffee, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,6 +26,8 @@ interface Props {
   onHardReset: () => void; 
   onTogglePDF: () => void;
   onVisitCoffee: () => void;
+  omniscienceReady: boolean;
+  omniscienceAvailable: boolean;
   postGovernNewGameAvailable: boolean;
   onGovernNewGame: () => void;
 }
@@ -61,7 +63,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, postGovernNewGameAvailable, onGovernNewGame, state }) => {
+export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, postGovernNewGameAvailable, omniscienceReady, omniscienceAvailable, onGovernNewGame, state }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   
   // Floating Text State
@@ -122,7 +124,7 @@ export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManua
 
   // Check for ascension availability
   const canAscend = state.tu >= 100 && !state.isAscending;
-  const ascensionDeferred = isAscensionDeferred(state);
+  const ascensionDeferred = !omniscienceReady;
 
   const categories = [
       { id: UpgradeCategory.Tooling, icon: Cpu, label: "Tooling" },
@@ -160,7 +162,7 @@ export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManua
                 )}
                 
                 {/* Ascension Button */}
-                {canAscend && (
+                {(canAscend || postGovernNewGameAvailable) && (
                     <motion.div 
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
@@ -171,18 +173,20 @@ export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManua
                                  <InfinityIcon size={24} className="text-purple-400" />
                              </div>
                              <div>
-                                 <div className="text-purple-300 text-sm font-bold uppercase tracking-wider">{postGovernNewGameAvailable ? 'GOVERNANCE ROLE COMPLETE' : ascensionDeferred ? 'ASCENSION DEFERRED' : 'PROJECT: OMNISCIENCE'}</div>
-                                 <div className="text-slate-300 text-xs">{postGovernNewGameAvailable ? 'NEW GAME+ AVAILABLE' : ascensionDeferred ? 'ORGANISATIONAL TRANSFORMATION IN PROGRESS' : 'Deployment ready. Your work is complete.'}</div>
+                                 <div className="text-purple-300 text-sm font-bold uppercase tracking-wider">{omniscienceReady ? 'PROJECT: OMNISCIENCE' : postGovernNewGameAvailable ? 'GOVERNANCE ROLE COMPLETE' : 'OMNISCIENCE LOCKED'}</div>
+                                 <div className="text-slate-300 text-xs">{omniscienceReady ? 'Governance stabilized. Deployment costs 100 TU.' : state.prestige.level > 0 ? 'Stabilize governance in this run to unlock Omniscience.' : 'Complete New Game+ and stabilize governance again to unlock Omniscience.'}</div>
                              </div>
                          </div>
-                         <button 
-                            disabled={ascensionDeferred && !postGovernNewGameAvailable}
-                            // Simulate buying the upgrade which triggers ascension
-                            onClick={() => postGovernNewGameAvailable ? onGovernNewGame() : onBuyUpgrade(UPGRADES.find(u => u.id === 'project_omniscience')!)}
-                            className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded shadow-lg transition-transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-                         >
-                             {postGovernNewGameAvailable ? 'NEW GAME+' : ascensionDeferred ? 'DEFERRED' : 'DEPLOY'}
-                         </button>
+                         <div className="flex flex-col gap-2 shrink-0">
+                           {omniscienceReady && <button
+                             disabled={!omniscienceAvailable}
+                             onClick={() => onBuyUpgrade(UPGRADES.find(u => u.id === 'project_omniscience')!)}
+                             className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
+                             DEPLOY OMNISCIENCE
+                           </button>}
+                           {postGovernNewGameAvailable && <button onClick={onGovernNewGame}
+                             className="border border-purple-500 text-purple-200 hover:bg-purple-900/40 font-bold py-2 px-4 rounded">NEW GAME+</button>}
+                         </div>
                     </motion.div>
                 )}
 
@@ -390,7 +394,7 @@ export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManua
                                         return (
                                             <button
                                                 key={u.id}
-                                                disabled={isPurchased || !canAfford || isDeferred}
+                                                disabled={isPurchased || !canAfford || isDeferred || (u.id === 'project_omniscience' && !omniscienceAvailable)}
                                                 onClick={() => onBuyUpgrade(u)}
                                                 className={clsx(
                                                     "w-full text-left p-3 rounded border transition-all flex justify-between items-start group relative overflow-hidden",
@@ -421,7 +425,7 @@ export const Workstation: React.FC<Props> = ({ activeTab, onManualClean, onManua
                                                         </span>
                                                     </div>
                                                     <p className="text-[10px] md:text-[11px] text-slate-500 mt-1 leading-tight">{u.description}</p>
-                                                    {isDeferred && !postGovernNewGameAvailable && <p className="text-[10px] text-purple-300 mt-1">ASCENSION DEFERRED — ORGANISATIONAL TRANSFORMATION IN PROGRESS</p>}
+                                                    {isDeferred && <p className="text-[10px] text-purple-300 mt-1">REQUIRES NEW GAME+ AND STABILIZED GOVERNANCE</p>}
                                                 </div>
                                                 {!isPurchased && (
                                                     <div className="flex flex-col items-end shrink-0 relative z-10">

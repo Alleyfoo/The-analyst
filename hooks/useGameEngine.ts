@@ -248,6 +248,10 @@ const canRebootExpansion = (state: GameState) => isExpansionEndingReady(state) &
     (state.expansionEnding.route === null || (state.expansionEnding.route === 'govern_machine' &&
       state.expansionEnding.accessMatrix.stabilizedOnce && isAccessMatrixSolved(state.expansionEnding.accessMatrix.cells)));
 
+// The quiet finale requires a previous NG+ and completed governance in this run.
+const canCompleteOmniscience = (state: GameState) => Number.isSafeInteger(state.prestige.level) && state.prestige.level > 0 &&
+    state.expansionEnding.route === 'govern_machine' && canRebootExpansion(state);
+
 const hydrateExpansionEnding = (saved: any): ExpansionEndingState => {
     if (!saved || !isExpansionEndingValid(saved)) return { route: null, accessMatrix: { ...INITIAL_STATE.expansionEnding.accessMatrix, cells: [] } };
     return { route: saved.route, accessMatrix: { active: saved.accessMatrix.active, cells: [...saved.accessMatrix.cells],
@@ -1905,7 +1909,7 @@ export const useGameEngine = () => {
 
   const purchaseUpgrade = (upgrade: Upgrade) => {
     setState(prev => {
-      if (upgrade.id === 'project_omniscience' && isAscensionDeferred(prev)) return prev;
+      if (upgrade.id === 'project_omniscience' && (!canCompleteOmniscience(prev) || !canPresentPilotIntroduction(prev))) return prev;
       if (prev.blockingTask) return prev;
       if (prev.upgrades[upgrade.id]) return prev; 
       const costAmount = upgrade.cost.amount;
@@ -2113,6 +2117,8 @@ export const useGameEngine = () => {
     productWriteProposal: productWriteAttempt ? (productWriteAttempt.kind === 'queue'
       ? queueWriteProposal(state, productWriteAttempt.index) : productWriteAttempt.kind === 'policy_trial'
         ? getPolicyTrialProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
+    omniscienceReady: canCompleteOmniscience(state),
+    omniscienceAvailable: canCompleteOmniscience(state) && canPresentPilotIntroduction(state) && state.tu >= 100 && !state.upgrades.project_omniscience,
     expansionNewGameAvailable: canRebootExpansion(state) && canPresentPilotIntroduction(state),
     expansionRoleAvailable: isExpansionEndingReady(state) && state.expansionEnding.route === null && canPresentPilotIntroduction(state),
     accessMatrixAvailable: isExpansionEndingReady(state) && isExpansionEndingValid(state.expansionEnding) && state.expansionEnding.route === 'govern_machine' && canPresentPilotIntroduction(state),
