@@ -3,14 +3,15 @@ import { CheckCircle, Sparkles } from 'lucide-react';
 import { AIPilotStep, AIPilotFeedbackStep } from '../types';
 
 interface Props {
-  step: AIPilotFeedbackStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible';
-  onContinue: (step: AIPilotStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible') => void;
+  step: AIPilotFeedbackStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible' | 'policy_trial_success';
+  onContinue: (step: AIPilotStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible' | 'policy_trial_success') => void;
   onLater: () => void;
   writePending?: number;
+  policyTrial?: { autoApplied: number; manualApproved: number };
 }
 
 // Presentation only: the engine owns eligibility, sequence and acknowledgement.
-export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater, writePending }) => {
+export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater, writePending, policyTrial }) => {
   const recognition = step === 'automation_recognized';
   const result = step === 'pilot_success';
   const expansion = step === 'demand_pending';
@@ -25,6 +26,7 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
   const writeOffer = step === 'write_access_offer';
   const writeResult = step === 'write_pilot_success';
   const writeRollout = step === 'approval_rollout_ready';
+  const policyResult = step === 'policy_trial_success';
   const writePressure = step === 'approval_bottleneck_visible';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -34,13 +36,21 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           {recognition ? <CheckCircle className="text-emerald-400" size={32} /> : <Sparkles className="text-blue-400" size={32} />}
           <div>
             <h2 id="pilot-introduction-title" className="text-xl font-bold text-slate-100">
-              {recognition ? 'AUTOMATION RECOGNIZED' : result ? 'PILOT RESULT' : expansion ? 'PILOT EXPANSION' : cleared ? 'INITIAL PILOT QUEUE CLEARED' : operational ? 'OPERATIONAL ROLLOUT' : turnaround ? 'TURNAROUND TARGET' : capacity ? 'REVIEW CAPACITY' : schema ? 'SCHEMA MAPPING PILOT' : schemaResult ? 'BATCH COMPLETE' : connection ? 'SOURCE CONTEXT' : connectedResult ? 'CONNECTED REVIEW RESULT' : writeOffer ? 'WRITEBACK' : writeResult ? 'WRITE PILOT RESULT' : writeRollout ? 'STANDARD WRITEBACK' : writePressure ? 'APPROVAL CAPACITY' : 'ENTERPRISE AI PILOT'}
+              {policyResult ? 'POLICY TRIAL COMPLETE' : recognition ? 'AUTOMATION RECOGNIZED' : result ? 'PILOT RESULT' : expansion ? 'PILOT EXPANSION' : cleared ? 'INITIAL PILOT QUEUE CLEARED' : operational ? 'OPERATIONAL ROLLOUT' : turnaround ? 'TURNAROUND TARGET' : capacity ? 'REVIEW CAPACITY' : schema ? 'SCHEMA MAPPING PILOT' : schemaResult ? 'BATCH COMPLETE' : connection ? 'SOURCE CONTEXT' : connectedResult ? 'CONNECTED REVIEW RESULT' : writeOffer ? 'WRITEBACK' : writeResult ? 'WRITE PILOT RESULT' : writeRollout ? 'STANDARD WRITEBACK' : writePressure ? 'APPROVAL CAPACITY' : 'ENTERPRISE AI PILOT'}
             </h2>
             <p className="text-xs font-mono uppercase text-slate-500 tracking-wider">Management update</p>
           </div>
         </div>
         <div className="bg-slate-950/50 p-4 rounded border border-slate-800 mb-6 text-sm text-slate-300 leading-relaxed space-y-3">
-          {recognition ? <>
+          {policyResult ? <>
+            <p>Five validated Product DB updates were routed according to the new approval policy.</p>
+            <p>AUTO APPLIED: {policyTrial?.autoApplied}</p>
+            <p>HUMAN REVIEWED: {policyTrial?.manualApproved}</p>
+            <p>OUT-OF-SCOPE AUTOMATION: 0</p>
+            <p>Category changes remain review-required.</p>
+            <p>{policyTrial?.autoApplied === 0 ? '“The current boundary keeps all writes under analyst review.”' : "“That's the boundary. Routine work can move inside it; exceptions stay with the analyst.”"}</p>
+            <p>Acknowledgement establishes Good Enough and activates this fixed policy for new writes. Existing pending work stays manual.</p>
+          </> : recognition ? <>
             <p>Your ETL scripts, indexed queries and server capacity have turned a spreadsheet routine into a repeatable workflow. Management has noticed the improvement in processing and turnaround.</p>
             <p>“This is working. You've made room for more useful analysis. We'd like to build on it.”</p>
           </> : result ? <>
@@ -119,7 +129,7 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           </>}
         </div>
         <button onClick={() => onContinue(step)} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded transition-colors">
-          {recognition ? 'Acknowledge progress' : result ? 'Acknowledge pilot result' : expansion ? 'Acknowledge pilot expansion' : cleared ? 'Acknowledge queue result' : operational ? 'Acknowledge operational rollout' : turnaround ? 'Acknowledge turnaround target' : capacity ? 'Acknowledge review capacity' : schema ? 'Acknowledge schema pilot' : schemaResult ? 'Acknowledge batch result' : connection ? 'CONNECT READ ONLY' : connectedResult ? 'Acknowledge connected result' : writeOffer ? 'GRANT BOUNDED WRITE' : writeResult ? 'Acknowledge write pilot result' : writeRollout ? 'Acknowledge standard writeback' : writePressure ? 'Acknowledge approval capacity' : 'Acknowledge pilot approval'}
+          {policyResult ? 'Acknowledge policy trial' : recognition ? 'Acknowledge progress' : result ? 'Acknowledge pilot result' : expansion ? 'Acknowledge pilot expansion' : cleared ? 'Acknowledge queue result' : operational ? 'Acknowledge operational rollout' : turnaround ? 'Acknowledge turnaround target' : capacity ? 'Acknowledge review capacity' : schema ? 'Acknowledge schema pilot' : schemaResult ? 'Acknowledge batch result' : connection ? 'CONNECT READ ONLY' : connectedResult ? 'Acknowledge connected result' : writeOffer ? 'GRANT BOUNDED WRITE' : writeResult ? 'Acknowledge write pilot result' : writeRollout ? 'Acknowledge standard writeback' : writePressure ? 'Acknowledge approval capacity' : 'Acknowledge pilot approval'}
         </button>
         <button onClick={onLater} className="w-full mt-3 py-2 text-sm text-slate-400 hover:text-slate-200">Later</button>
       </section>

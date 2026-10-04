@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal } from '../constants';
+import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy } from '../types';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -24,7 +24,8 @@ const hasAcceleratedAIReviewDemand = (state: GameState) =>
        ['read_connection_offer', 'product_db_read_connected', 'connected_mapping_success'].includes(state.expansionProgress.transition.step)))) ||
     (state.expansionProgress.era === 'connected_enterprise' && (state.expansionProgress.transition === null ||
       (state.expansionProgress.transition.targetEra === 'good_enough' &&
-       ['write_access_offer', 'write_pilot_active', 'write_pilot_success', 'approval_rollout_ready', 'approval_queue_active', 'approval_bottleneck_visible', 'approval_policy_offer'].includes(state.expansionProgress.transition.step)))) ||
+       ['write_access_offer', 'write_pilot_active', 'write_pilot_success', 'approval_rollout_ready', 'approval_queue_active', 'approval_bottleneck_visible', 'approval_policy_offer', 'policy_trial_active', 'policy_trial_success'].includes(state.expansionProgress.transition.step)))) ||
+    (state.expansionProgress.era === 'good_enough' && state.expansionProgress.transition === null) ||
     (state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition?.targetEra === 'acceleration' &&
      (state.expansionProgress.transition.step === 'accelerated_routing_active' || state.expansionProgress.transition.step === 'review_bottleneck_visible'));
 
@@ -115,13 +116,46 @@ const hasWritePilotProof = (state: GameState) => state.connectedEnterprise.produ
     state.connectedEnterprise.productWritePilot.completed === 5 && state.connectedEnterprise.productWritePilot.pending === 0 &&
     state.connectedEnterprise.productWritePilot.total === 5 && state.connectedEnterprise.writeUses >= 5;
 
+const reviewClassIndices = (policy: ProductWritePolicy) => PRODUCT_WRITE_CLASSES
+    .map((value, index) => policy.autoClasses.includes(value) ? -1 : index).filter(index => index >= 0);
+const isOperationalWritePolicy = (state: GameState) => {
+    const policy = state.connectedEnterprise.productWritePolicy;
+    const queue = state.connectedEnterprise.productWriteQueue;
+    return state.expansionProgress.era === 'good_enough' && state.expansionProgress.transition === null &&
+      policy.configured && policy.active && !policy.trial.active && policy.trial.total === 5 &&
+      policy.trial.autoApplied === policy.autoClasses.length && policy.trial.manualPending === 0 &&
+      policy.trial.autoApplied + policy.trial.manualApproved === 5 &&
+      policy.routeSequence === policy.autoAppliedTotal + policy.manualRoutedTotal &&
+      policy.manualCompleted <= policy.manualRoutedTotal &&
+      queue.pending === policy.legacyPending + policy.manualRoutedTotal - policy.manualCompleted;
+};
 const isProductWriteQueueActive = (state: GameState) => {
     const queue = state.connectedEnterprise.productWriteQueue;
-    return state.expansionProgress.era === 'connected_enterprise' && state.expansionProgress.transition?.targetEra === 'good_enough' &&
-      ['approval_queue_active', 'approval_bottleneck_visible', 'approval_policy_offer'].includes(state.expansionProgress.transition.step) &&
+    const prePolicy = state.expansionProgress.era === 'connected_enterprise' && state.expansionProgress.transition?.targetEra === 'good_enough' &&
+      ['approval_queue_active', 'approval_bottleneck_visible', 'approval_policy_offer', 'policy_trial_active', 'policy_trial_success'].includes(state.expansionProgress.transition.step);
+    const policy = state.connectedEnterprise.productWritePolicy;
+    return (prePolicy || isOperationalWritePolicy(state)) &&
       hasWritePilotProof(state) && queue.active && queue.arrivalIntervalTicks === PRODUCT_WRITE_QUEUE_INTERVAL_TICKS &&
       queue.pending <= PRODUCT_WRITE_QUEUE_CAP && queue.pending + queue.completed === PRODUCT_WRITE_QUEUE_INITIAL + queue.totalArrived &&
-      state.connectedEnterprise.writeUses >= 5 + queue.completed;
+      state.connectedEnterprise.writeUses >= 5 + queue.completed + (policy.configured ? policy.trial.autoApplied + policy.trial.manualApproved + policy.autoAppliedTotal : 0);
+};
+const policyTrialStep = (state: GameState) => state.expansionProgress.era === 'connected_enterprise' &&
+    state.expansionProgress.transition?.targetEra === 'good_enough' ? state.expansionProgress.transition.step : null;
+const hasPolicyTrialProof = (state: GameState) => {
+    const policy = state.connectedEnterprise.productWritePolicy;
+    return isProductWriteQueueActive(state) && policy.configured && !policy.active && policy.trial.total === 5 &&
+      policy.trial.autoApplied === policy.autoClasses.length &&
+      policy.trial.autoApplied + policy.trial.manualApproved + policy.trial.manualPending === 5;
+};
+const isPolicyTrialActive = (state: GameState) => policyTrialStep(state) === 'policy_trial_active' &&
+    hasPolicyTrialProof(state) && state.connectedEnterprise.productWritePolicy.trial.active && state.connectedEnterprise.productWritePolicy.trial.manualPending > 0;
+const queueWriteProposal = (state: GameState, index: number) => {
+    const policy = state.connectedEnterprise.productWritePolicy;
+    if (!policy.active || policy.legacyPending > 0) return getOperationalProductWriteProposal(index);
+    const indices = reviewClassIndices(policy);
+    const position = policy.manualCompleted;
+    const route = Math.floor(position / indices.length) * 5 + indices[position % indices.length];
+    return { ...PRODUCT_WRITE_PROPOSALS[route % 5], record: `P-P${String(route).padStart(5, '0')}` };
 };
 
 const productWritePressureProof = (state: GameState) => {
@@ -136,6 +170,17 @@ const productWritePressureProof = (state: GameState) => {
 const arriveProductWrite = (prev: GameState, tick: number): Partial<GameState> => {
     const queue = prev.connectedEnterprise.productWriteQueue;
     if (prev.isAscending || !isProductWriteQueueActive(prev) || tick < queue.nextArrivalTick) return {};
+    const policy = prev.connectedEnterprise.productWritePolicy;
+    if (isOperationalWritePolicy(prev)) {
+      const automatic = policy.autoClasses.includes(PRODUCT_WRITE_CLASSES[policy.routeSequence % 5]);
+      const manual = !automatic && queue.pending < PRODUCT_WRITE_QUEUE_CAP;
+      return { connectedEnterprise: { ...prev.connectedEnterprise,
+        writeUses: prev.connectedEnterprise.writeUses + (automatic ? 1 : 0),
+        productWritePolicy: { ...policy, autoAppliedTotal: policy.autoAppliedTotal + (automatic ? 1 : 0),
+          manualRoutedTotal: policy.manualRoutedTotal + (manual ? 1 : 0), routeSequence: policy.routeSequence + (automatic || manual ? 1 : 0) },
+        productWriteQueue: { ...queue, pending: queue.pending + (manual ? 1 : 0), totalArrived: queue.totalArrived + (manual ? 1 : 0),
+          peakPending: Math.max(queue.peakPending, queue.pending + (manual ? 1 : 0)), nextArrivalTick: tick + PRODUCT_WRITE_QUEUE_INTERVAL_TICKS } } };
+    }
     const added = queue.pending < PRODUCT_WRITE_QUEUE_CAP ? 1 : 0;
     const next = { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, productWriteQueue: { ...queue,
       pending: queue.pending + added, totalArrived: queue.totalArrived + added, peakPending: Math.max(queue.peakPending, queue.pending + added),
@@ -143,7 +188,27 @@ const arriveProductWrite = (prev: GameState, tick: number): Partial<GameState> =
     return { connectedEnterprise: next.connectedEnterprise, expansionProgress: productWritePressureProof(next) };
 };
 
-type ProductWriteAttempt = { id: number; index: number; kind: 'pilot' | 'queue' };
+type ProductWriteAttempt = { id: number; index: number; kind: 'pilot' | 'queue' | 'policy_trial' };
+
+const hydrateProductWritePolicy = (saved: any): ProductWritePolicy => {
+    const empty = () => ({ ...INITIAL_STATE.connectedEnterprise.productWritePolicy, autoClasses: [],
+      trial: { ...INITIAL_STATE.connectedEnterprise.productWritePolicy.trial } });
+    if (!saved || saved.configured !== true || typeof saved.active !== 'boolean' || !Array.isArray(saved.autoClasses)) return empty();
+    const autoClasses = PRODUCT_WRITE_AUTO_CLASSES.filter(value => saved.autoClasses.includes(value));
+    const trial = saved.trial;
+    if (!trial || typeof trial.active !== 'boolean' ||
+      !['legacyPending', 'autoAppliedTotal', 'manualRoutedTotal', 'manualCompleted', 'routeSequence'].every(key => Number.isSafeInteger(saved[key]) && saved[key] >= 0) ||
+      !['total', 'autoApplied', 'manualPending', 'manualApproved'].every(key => Number.isSafeInteger(trial[key]) && trial[key] >= 0) ||
+      saved.legacyPending > PRODUCT_WRITE_QUEUE_CAP || saved.manualCompleted > saved.manualRoutedTotal ||
+      saved.routeSequence !== saved.autoAppliedTotal + saved.manualRoutedTotal ||
+      trial.total !== 5 || trial.autoApplied !== autoClasses.length || trial.autoApplied + trial.manualPending + trial.manualApproved !== 5 ||
+      trial.active !== (trial.manualPending > 0) || (saved.active && trial.manualPending !== 0) ||
+      (!saved.active && ['legacyPending', 'autoAppliedTotal', 'manualRoutedTotal', 'manualCompleted', 'routeSequence'].some(key => saved[key] !== 0))) return empty();
+    return { configured: true, active: saved.active, autoClasses, legacyPending: saved.legacyPending,
+      autoAppliedTotal: saved.autoAppliedTotal, manualRoutedTotal: saved.manualRoutedTotal, manualCompleted: saved.manualCompleted,
+      routeSequence: saved.routeSequence, trial: { active: trial.active, total: 5, autoApplied: trial.autoApplied,
+        manualPending: trial.manualPending, manualApproved: trial.manualApproved } };
+};
 
 const hydrateState = (parsed: any): GameState => {
     const savedWritePilot = parsed.connectedEnterprise?.productWritePilot;
@@ -156,6 +221,7 @@ const hydrateState = (parsed: any): GameState => {
         ...INITIAL_STATE,
         ...parsed,
         connectedEnterprise: {
+            productWritePolicy: hydrateProductWritePolicy(parsed.connectedEnterprise?.productWritePolicy),
             productDb: { connected: parsed.connectedEnterprise?.productDb?.connected === true && ['read', 'read_write'].includes(parsed.connectedEnterprise.productDb.access),
                 access: parsed.connectedEnterprise?.productDb?.connected === true && ['read', 'read_write'].includes(parsed.connectedEnterprise.productDb.access) ? parsed.connectedEnterprise.productDb.access : 'none' },
             writeUses: Number.isSafeInteger(parsed.connectedEnterprise?.writeUses) && parsed.connectedEnterprise.writeUses >= 0 ? parsed.connectedEnterprise.writeUses : 0,
@@ -966,12 +1032,29 @@ export const useGameEngine = () => {
     productWriteAttemptRef.current = null;
     setProductWriteAttempt(null);
     setState(prev => {
+      if (attempt.kind === 'policy_trial') {
+        const policy = prev.connectedEnterprise.productWritePolicy;
+        const indices = reviewClassIndices(policy);
+        if (!isPolicyTrialActive(prev) || !canPresentPilotIntroduction(prev, true) || attempt.index !== indices[policy.trial.manualApproved]) return prev;
+        const proposal = getPolicyTrialProductWriteProposal(attempt.index);
+        const trial = { ...policy.trial, manualApproved: policy.trial.manualApproved + 1, manualPending: policy.trial.manualPending - 1,
+          active: policy.trial.manualPending > 1 };
+        return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, writeUses: prev.connectedEnterprise.writeUses + 1,
+          productWritePolicy: { ...policy, trial } },
+          logs: [...prev.logs, { id: Date.now(), text: `Product DB policy trial applied: ${proposal.record}.${proposal.field} (${JSON.stringify(proposal.current)} → ${JSON.stringify(proposal.proposed)})`, type: 'success', timestamp: Date.now() }],
+          ...(trial.manualPending === 0 && trial.autoApplied + trial.manualApproved === 5 ? {
+            expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'good_enough', step: 'policy_trial_success' } } } : {}) };
+      }
       if (attempt.kind === 'queue') {
         const queue = prev.connectedEnterprise.productWriteQueue;
         if (!isProductWriteQueueActive(prev) || !canPresentPilotIntroduction(prev, true) || queue.pending <= 0 || attempt.index !== queue.completed) return prev;
-        const proposal = getOperationalProductWriteProposal(attempt.index);
+        const proposal = queueWriteProposal(prev, attempt.index);
         const next = { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, writeUses: prev.connectedEnterprise.writeUses + 1,
-          productWriteQueue: { ...queue, pending: queue.pending - 1, completed: queue.completed + 1 } },
+          productWriteQueue: { ...queue, pending: queue.pending - 1, completed: queue.completed + 1 },
+          productWritePolicy: prev.connectedEnterprise.productWritePolicy.active ? { ...prev.connectedEnterprise.productWritePolicy,
+            legacyPending: Math.max(0, prev.connectedEnterprise.productWritePolicy.legacyPending - 1),
+            manualCompleted: prev.connectedEnterprise.productWritePolicy.manualCompleted + (prev.connectedEnterprise.productWritePolicy.legacyPending === 0 ? 1 : 0) }
+            : prev.connectedEnterprise.productWritePolicy },
           logs: [...prev.logs, { id: Date.now(), text: `Product DB update applied: ${proposal.record}.${proposal.field} (${JSON.stringify(proposal.current)} → ${JSON.stringify(proposal.proposed)})`, type: 'success' as const, timestamp: Date.now() }] };
         return { ...next, expansionProgress: productWritePressureProof(next) };
       }
@@ -1012,6 +1095,39 @@ export const useGameEngine = () => {
           expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'good_enough', step: 'approval_queue_active' } } };
       }
       return { ...prev, expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'good_enough', step: 'approval_policy_offer' } } };
+    });
+  };
+
+  const writePolicyFeedbackStep = (snapshot: GameState): 'approval_policy_offer' | 'policy_trial_success' | null => {
+    if (policyTrialStep(snapshot) === 'approval_policy_offer' && isProductWriteQueueActive(snapshot) && !snapshot.connectedEnterprise.productWritePolicy.configured) return 'approval_policy_offer';
+    const trial = snapshot.connectedEnterprise.productWritePolicy.trial;
+    return policyTrialStep(snapshot) === 'policy_trial_success' && hasPolicyTrialProof(snapshot) && !trial.active &&
+      trial.manualPending === 0 && trial.autoApplied + trial.manualApproved === 5 ? 'policy_trial_success' : null;
+  };
+  const confirmProductWritePolicy = (selected: ProductWriteClass[]) => {
+    setState(prev => {
+      if (!Array.isArray(selected) || selected.some(value => !PRODUCT_WRITE_AUTO_CLASSES.includes(value as typeof PRODUCT_WRITE_AUTO_CLASSES[number])) ||
+        !canPresentPilotIntroduction(prev) || writePolicyFeedbackStep(prev) !== 'approval_policy_offer') return prev;
+      const autoClasses = PRODUCT_WRITE_AUTO_CLASSES.filter(value => selected.includes(value));
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, writeUses: prev.connectedEnterprise.writeUses + autoClasses.length,
+        productWritePolicy: { ...INITIAL_STATE.connectedEnterprise.productWritePolicy, configured: true, autoClasses,
+          trial: { active: true, total: 5, autoApplied: autoClasses.length, manualPending: 5 - autoClasses.length, manualApproved: 0 } } },
+        expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'good_enough', step: 'policy_trial_active' } } };
+    });
+  };
+  const openPolicyTrialWrite = () => {
+    const current = stateRef.current;
+    if (!isPolicyTrialActive(current) || !canPresentPilotIntroduction(current)) return;
+    const attempt: ProductWriteAttempt = { id: ++productWriteSequence.current, kind: 'policy_trial',
+      index: reviewClassIndices(current.connectedEnterprise.productWritePolicy)[current.connectedEnterprise.productWritePolicy.trial.manualApproved] };
+    productWriteAttemptRef.current = attempt;
+    setProductWriteAttempt(attempt);
+  };
+  const acknowledgeProductWritePolicy = () => {
+    setState(prev => {
+      if (!canPresentPilotIntroduction(prev) || writePolicyFeedbackStep(prev) !== 'policy_trial_success') return prev;
+      return { ...prev, expansionProgress: { era: 'good_enough', transition: null }, connectedEnterprise: { ...prev.connectedEnterprise,
+        productWritePolicy: { ...prev.connectedEnterprise.productWritePolicy, active: true, legacyPending: prev.connectedEnterprise.productWriteQueue.pending } } };
     });
   };
 
@@ -1570,7 +1686,10 @@ export const useGameEngine = () => {
     connectedUpdate: { step: connectedFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     productWriteAttempt,
     productWriteProposal: productWriteAttempt ? (productWriteAttempt.kind === 'queue'
-      ? getOperationalProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
+      ? queueWriteProposal(state, productWriteAttempt.index) : productWriteAttempt.kind === 'policy_trial'
+        ? getPolicyTrialProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
+    writePolicyUpdate: { step: writePolicyFeedbackStep(state), available: canPresentPilotIntroduction(state) },
+    policyTrialAvailable: isPolicyTrialActive(state) && canPresentPilotIntroduction(state),
     writeQueueUpdate: { step: writeQueueFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     productWriteQueueAvailable: isProductWriteQueueActive(state) && state.connectedEnterprise.productWriteQueue.pending > 0 && canPresentPilotIntroduction(state),
     // Local simulated record values derive from the persisted applied prefix, never from logs.
@@ -1591,7 +1710,7 @@ export const useGameEngine = () => {
       acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
       connectProductDb, acknowledgeConnectedResult,
       grantProductWrite, openProductWriteReview, closeProductWriteReview, applyProductWrite, acknowledgeWriteResult,
-      openNextProductWrite, acknowledgeWriteQueueUpdate,
+      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

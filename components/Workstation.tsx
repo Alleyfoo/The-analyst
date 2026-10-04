@@ -40,6 +40,9 @@ interface Props {
   writeUpdate: { step: 'write_access_offer' | 'write_pilot_success' | null; available: boolean };
   productWriteAvailable: boolean;
   writeQueueUpdate: { step: 'approval_rollout_ready' | 'approval_bottleneck_visible' | null; available: boolean };
+  writePolicyUpdate: { step: 'approval_policy_offer' | 'policy_trial_success' | null; available: boolean };
+  policyTrialAvailable: boolean;
+  onReviewPolicyTrial: () => void;
   productWriteQueueAvailable: boolean;
   onReviewNextWrite: () => void;
   onReviewProductWrite: () => void;
@@ -76,7 +79,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial }) => {
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -195,7 +198,7 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
         </button>
         {!accelerationUpdate.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
       </div>}
-      {(state.expansionProgress.era === 'acceleration' || state.expansionProgress.era === 'connected_enterprise') &&
+      {(state.expansionProgress.era === 'acceleration' || state.expansionProgress.era === 'connected_enterprise' || state.expansionProgress.era === 'good_enough') &&
        (state.expansionProgress.transition === null || state.expansionProgress.transition.targetEra === 'connected_enterprise' ||
         (state.expansionProgress.era === 'connected_enterprise' && state.expansionProgress.transition.targetEra === 'good_enough')) && state.upgrades['pandas_scripts'] === true && (
         <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
@@ -215,7 +218,22 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
         </div>
       )}
       {(connectedUpdate.step || state.connectedEnterprise.productDb.connected) && <div className="shrink-0 border-b border-blue-800/50 bg-blue-950/30 p-3 text-xs text-slate-300">
-        {state.connectedEnterprise.productDb.connected && <p className="font-bold text-blue-200">CONNECTED SYSTEMS · Product DB · {state.connectedEnterprise.productDb.access === 'read_write' ? 'READ + WRITE · HUMAN APPROVAL REQUIRED' : 'READ ONLY'}</p>}
+        {state.connectedEnterprise.productDb.connected && <p className="font-bold text-blue-200">CONNECTED SYSTEMS · Product DB · {state.connectedEnterprise.productDb.access === 'read_write' ? (state.connectedEnterprise.productWritePolicy.configured ? 'READ + WRITE · BOUNDED APPROVAL POLICY' : 'READ + WRITE · HUMAN APPROVAL REQUIRED') : 'READ ONLY'}</p>}
+        {writePolicyUpdate.step && <button onClick={onReviewPilot} disabled={!writePolicyUpdate.available}
+          className="mt-2 w-full py-2 border border-indigo-500 rounded text-indigo-200 disabled:opacity-40 hover:bg-indigo-900/30">
+          {writePolicyUpdate.step === 'approval_policy_offer' ? 'Review approval policy' : 'Review policy trial result'}
+        </button>}
+        {state.connectedEnterprise.productWritePolicy.configured && <div className="mt-2 space-y-1">
+          <p className="font-bold text-blue-200">PRODUCT DB WRITE POLICY</p>
+          <p>AUTO APPLY: {state.connectedEnterprise.productWritePolicy.autoClasses.length} transform classes · HUMAN REVIEW: {5 - state.connectedEnterprise.productWritePolicy.autoClasses.length} transform classes</p>
+          <p>Category changes: REVIEW REQUIRED · Policy: {state.connectedEnterprise.productWritePolicy.active ? 'ACTIVE · FIXED' : 'CONTROLLED TRIAL · FIXED'}</p>
+          <p>AUTO APPLIED: {state.connectedEnterprise.productWritePolicy.autoAppliedTotal} · PENDING REVIEW: {state.connectedEnterprise.productWriteQueue.pending}</p>
+          {state.connectedEnterprise.productWritePolicy.trial.active && <>
+            <p>Policy trial: {state.connectedEnterprise.productWritePolicy.trial.autoApplied} automatic · {state.connectedEnterprise.productWritePolicy.trial.manualApproved} human reviewed · {state.connectedEnterprise.productWritePolicy.trial.manualPending} pending</p>
+            <button onClick={onReviewPolicyTrial} disabled={!policyTrialAvailable}
+              className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 disabled:opacity-40 hover:bg-blue-900/30">REVIEW POLICY TRIAL WRITE</button>
+          </>}
+        </div>}
         {writeQueueUpdate.step && <button onClick={onReviewPilot} disabled={!writeQueueUpdate.available}
           className="mt-2 w-full py-2 border border-indigo-500 rounded text-indigo-200 disabled:opacity-40 hover:bg-indigo-900/30">
           {writeQueueUpdate.step === 'approval_rollout_ready' ? 'Review standard writeback' : 'Review approval capacity'}
@@ -223,7 +241,7 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
         {state.connectedEnterprise.productWriteQueue.active && <div className="mt-2 space-y-1">
           <p className="font-bold text-blue-200">PRODUCT DB WRITE APPROVALS</p>
           <p>{state.connectedEnterprise.productWriteQueue.pending} pending · {state.connectedEnterprise.productWriteQueue.completed} approved</p>
-          <p>ROUTING: ACTIVE · VALIDATED WRITES · HUMAN APPROVAL: REQUIRED</p>
+          <p>{state.connectedEnterprise.productWritePolicy.active ? "ROUTING: ACTIVE · POLICY FOR NEW WRITES · PENDING ITEMS REQUIRE HUMAN APPROVAL" : "ROUTING: ACTIVE · VALIDATED WRITES · HUMAN APPROVAL: REQUIRED"}</p>
           <p>Next write: ~{Math.ceil(Math.max(0, state.connectedEnterprise.productWriteQueue.nextArrivalTick - state.tick) * TICK_RATE_MS / 1000)}s</p>
           <button onClick={onReviewNextWrite} disabled={!productWriteQueueAvailable}
             className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 disabled:opacity-40 hover:bg-blue-900/30">REVIEW NEXT WRITE</button>

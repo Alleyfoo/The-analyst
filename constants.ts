@@ -699,3 +699,21 @@ export const getOperationalProductWriteProposal = (index: number) => ({
   ...PRODUCT_WRITE_PROPOSALS[index % PRODUCT_WRITE_PROPOSALS.length],
   record: `P-W${String(index).padStart(5, '0')}`,
 });
+
+// Positional alignment with the five existing validated proposals is persisted routing authority.
+export const PRODUCT_WRITE_CLASSES = [
+  'typed_unit_normalization', 'approved_alias_normalization', 'trim_whitespace',
+  'boolean_normalization', 'category_correction',
+] as const;
+export const PRODUCT_WRITE_AUTO_CLASSES = PRODUCT_WRITE_CLASSES.slice(0, 4);
+export const PRODUCT_WRITE_CLASS_DETAILS = [
+  { label: 'Typed unit normalization', scope: 'Existing field schema defines cm; remove representation syntax only.' },
+  { label: 'Approved alias normalization', scope: 'Use an existing approved canonical value; create no new vocabulary.' },
+  { label: 'Whitespace trim', scope: 'Remove surrounding whitespace only; identifier characters stay unchanged.' },
+  { label: 'Boolean normalization', scope: 'Use the exact established yes → true mapping; no semantic inference.' },
+  { label: 'Category correction', scope: 'Buyer-visible taxonomy decision; always routed to analyst review.' },
+] as const;
+
+export const getPolicyTrialProductWriteProposal = (index: number) => ({
+  ...PRODUCT_WRITE_PROPOSALS[index], record: `P-T${String(index).padStart(5, '0')}`,
+});
