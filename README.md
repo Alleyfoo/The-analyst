@@ -4,24 +4,30 @@ A satirical incremental/management game about corporate data work. Balance **Per
 
 > **A visual representation of corporate software. The actual version is somehow worse.**
 
+## Play
+
+GitHub Pages deployment target: [The Analyst](https://alleyfoo.github.io/The-analyst/).
+
+The Pages workflow deploys pushes to `master` and can be run manually. This URL is a deployment target; a successful Pages deployment has not yet been confirmed. Publishing requires GitHub Pages to use GitHub Actions as its source.
+
 ## About the game
 
 Start with spreadsheet software, clean incoming data and turn it into metrics. Buy automation and storage upgrades, build a dashboard, answer chat requests and meet the board's growth targets while the raw-data buffer keeps filling. Marketing campaigns and stock trading add more ways to generate perceived value.
 
 **PU** measures how impressive your work looks to management and doubles as a spending currency. **TU** represents actual understanding, supported by better-quality metrics and honest responses. Let appearances run too far ahead of understanding and system entropy can rise.
 
-Progression follows resource thresholds and upgrades rather than explicit chapters, leading to an ascension ending with a New Game+ option.
+Original progression follows resource thresholds and upgrades, leading to the quiet Project: OMNISCIENCE book finale. The implemented AI rollout and governance expansion has its own progression and separate New Game+ option.
 
 ## Minigames
 
 The repository implements deliberately gamified activities:
 
-- **Spaghetti Protocol:** untangle data streams through manual cleaning.
+- **Spaghetti Mode:** manually normalize messy values into explicit target formats; tangled connections straighten as records become clean.
 - **Schema mapping:** match messy column names to a cleaner schema.
 - **Ad-hoc SQL queries:** assemble query fragments to satisfy a request.
 - **Manual PDF extraction:** select tables while avoiding image noise.
 - **Data-flow modelling:** route useful data and discard noise.
-- **Process mining:** follow a moving signal to capture samples.
+- **Process mining:** inspect case traces and wait times to identify a bottleneck and abnormal route.
 - **Model training:** adjust a fitting curve and compare training with validation results.
 - **Buzzword battles:** identify real technical terms while challenging a rival analyst.
 
@@ -49,13 +55,13 @@ The `lint` script runs `tsc --noEmit`.
 
 ## Technical overview
 
-Built with **React 19**, **TypeScript** and **Vite**. The game runs client-side in the browser, saves progress to **localStorage**, and requires no backend. Presentation uses CDN-loaded styling and fonts.
+Built with **React 19**, **TypeScript** and **Vite**. The game runs client-side in the browser, saves progress to **localStorage**, and requires no backend or API key. Presentation uses CDN-loaded styling and fonts.
 
 For the detailed baseline architecture, gameplay and state documentation, see [docs/project/INDEX.md](docs/project/INDEX.md).
 
 ## Current status
 
-The repository contains a complete playable baseline, currently being preserved while future development is planned. Existing behavior and known quirks are documented; planned expansion features are not part of the current game.
+The repository contains a complete playable game, including the implemented AI rollout/governance expansion and recent minigame clarity improvements. GitHub Pages deployment is prepared through `.github/workflows/deploy-pages.yml`; public availability remains unconfirmed. Existing behavior and known quirks are documented.
 
 ## Development principle
 
