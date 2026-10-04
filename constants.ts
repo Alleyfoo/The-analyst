@@ -1,4 +1,4 @@
-import { GameState, Upgrade, UpgradeCategory, ResourceType, GameEvent, ChatScenario } from './types';
+import { GameState, Upgrade, UpgradeCategory, ResourceType, GameEvent, ChatScenario, IncidentInvestigationStep } from './types';
 
 export const TICK_RATE_MS = 200; // 5 ticks per second
 export const HISTORY_LENGTH = 50;
@@ -728,3 +728,81 @@ export const getProductWriteVelocity = (autoClassCount: number) => {
 
 // Unknown upstream values never enter the validated write templates or policy classes.
 export const SOURCE_DRIFT = { expected: "45 cm", observed: "~45 cm", recordsPerBatch: 5, impactBatches: 5 } as const;
+
+// One authored S12 incident trace; these facts are not a mutable product/provenance store.
+export const INCIDENT_TRACE_SAMPLE = { record: 'P-DRIFT-0042', title: 'Modular Shelf' } as const;
+export const SOURCE_DRIFT_ROOT_CAUSE = 'The supplier introduced approximation semantics that are not defined by the established Width normalization rule. The value was correctly quarantined before Product DB writeback.';
+export const INCIDENT_TRACE_EVIDENCE: Record<Exclude<IncidentInvestigationStep, 'root_cause_confirmed'>, {
+  title: string; evidence: string[];
+  choices: { label: string; next: IncidentInvestigationStep | null; observation: string }[];
+}> = {
+  complaint: {
+    title: 'CUSTOMER COMPLAINT',
+    evidence: ['“I can open the new shelf from the link, but when I filter for 45 cm width it disappears.”'],
+    choices: [
+      { label: 'STOREFRONT WIDTH FILTER', next: 'storefront', observation: '' },
+      { label: 'PRODUCT DB WRITE SERVICE', next: null, observation: 'Write service is operating. No failed write is associated with the affected product.' },
+      { label: 'SQL REVIEW QUEUE', next: null, observation: 'Analyst SQL workload is unrelated to storefront product eligibility.' },
+    ],
+  },
+  storefront: {
+    title: 'STOREFRONT WIDTH FILTER',
+    evidence: ['The product detail page resolves by identifier.', 'The Width filter only includes products with a canonical numeric Width.', 'The affected product has no usable canonical numeric Width.'],
+    choices: [
+      { label: 'AFFECTED PRODUCT RECORD', next: 'product_record', observation: '' },
+      { label: 'MARKETING CAMPAIGN', next: null, observation: 'Campaigns drive traffic. They do not define which products have numeric Width values.' },
+      { label: 'MARKET / COMPANY METRICS', next: null, observation: 'Company metrics do not determine storefront Width-filter eligibility.' },
+    ],
+  },
+  product_record: {
+    title: 'AFFECTED PRODUCT RECORD',
+    evidence: [`PRODUCT: ${INCIDENT_TRACE_SAMPLE.record}`, `Title: ${INCIDENT_TRACE_SAMPLE.title}`, 'Canonical Width: MISSING', 'Product status: ACTIVE', 'Product page: AVAILABLE', 'Width filter: NOT INDEXED'],
+    choices: [
+      { label: 'TRACE WIDTH PROVENANCE', next: 'provenance', observation: '' },
+      { label: 'INSPECT CATEGORY WRITE HISTORY', next: null, observation: 'Category writes do not supply the missing canonical Width. No category write explains this omission.' },
+      { label: 'INSPECT PRODUCT DB PERMISSIONS', next: null, observation: 'READ_WRITE is present, but no Width write was attempted for this record. Missing permission is not the cause.' },
+    ],
+  },
+  provenance: {
+    title: 'WIDTH PROVENANCE',
+    evidence: ['Customer filter omission → canonical Width missing', 'WIDTH VALUE STATUS: QUARANTINED BEFORE WRITEBACK', 'PRODUCT DB WRITE ATTEMPT: NONE', 'The record never entered Product DB write-policy routing.'],
+    choices: [
+      { label: 'OPEN QUARANTINE EVENT', next: 'quarantine', observation: '' },
+      { label: 'INSPECT AUTO-APPLY COUNTER', next: null, observation: 'The counter describes other validated mutations. It contains no write for this quarantined Width.' },
+      { label: 'INSPECT HUMAN REVIEW BACKLOG', next: null, observation: 'The backlog holds validated write proposals. This source value produced no proposal and never joined it.' },
+    ],
+  },
+  quarantine: {
+    title: 'QUARANTINE EVENT',
+    evidence: ['SOURCE: Supplier feed', 'FIELD: Width', `RAW VALUE: ${SOURCE_DRIFT.observed}`, 'EXPECTED CONTRACT: established numeric-unit representation', 'RESULT: QUARANTINED', 'WRITE PROPOSAL: NOT CREATED'],
+    choices: [
+      { label: 'INSPECT RAW SUPPLIER INPUT', next: 'source', observation: '' },
+      { label: 'INSPECT PRODUCT DB WRITE POLICY', next: null, observation: 'This source record never became a validated write or reached policy routing. Per-item manual approval could not supply the missing value. Even with typed_unit_normalization set to AUTO, "~45 cm" fails its governed preconditions; no automatic write occurred.' },
+      { label: 'INSPECT WRITE PERMISSIONS', next: null, observation: 'READ_WRITE is present. The source boundary withheld the value before any write proposal or permission decision.' },
+    ],
+  },
+  source: {
+    title: 'RAW SUPPLIER INPUT',
+    evidence: [`PREVIOUS SUPPLIER VALUE: Width: "${SOURCE_DRIFT.expected}"`, `CURRENT SUPPLIER VALUE: Width: "${SOURCE_DRIFT.observed}"`, 'No other meaningful source field changed in this sample.'],
+    choices: [
+      { label: 'INSPECT NORMALIZATION RULE', next: 'rule', observation: '' },
+      { label: 'INSPECT AI CONFIDENCE', next: null, observation: 'No confidence decision was made. The input failed the rule boundary before a validated write existed.' },
+      { label: 'INSPECT APPROVAL POLICY', next: null, observation: 'The fixed approval policy applies after validation. This source value was quarantined before that stage.' },
+    ],
+  },
+  rule: {
+    title: 'NORMALIZATION RULE',
+    evidence: ['TYPED UNIT NORMALIZATION', 'ACCEPTS: <number> cm', 'EXAMPLES: 45 cm · 120 cm · 32.5 cm', 'DOES NOT DEFINE: approximate measurements', `OBSERVED: ${SOURCE_DRIFT.observed}`, 'RESULT: OUTSIDE RULE'],
+    choices: [],
+  },
+};
+export const INCIDENT_TRACE_SUMMARY = [
+  'CUSTOMER — 45 cm filter omits product',
+  'STOREFRONT — filter requires canonical numeric Width',
+  'PRODUCT RECORD — Width missing',
+  'PROVENANCE — no Product DB write attempted',
+  'QUARANTINE — "~45 cm" rejected before writeback',
+  'SOURCE — supplier representation changed',
+  'RULE — approximation semantics not governed',
+  'ROOT CAUSE — source contract drift outside established transform',
+] as const;

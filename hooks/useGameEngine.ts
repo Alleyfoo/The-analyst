@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale, SourceDriftIncident } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal, PRODUCT_WRITE_BATCH_SIZE, SOURCE_DRIFT } from '../constants';
+import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale, SourceDriftIncident, IncidentInvestigation, IncidentInvestigationStep, INCIDENT_INVESTIGATION_STEPS } from '../types';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal, PRODUCT_WRITE_BATCH_SIZE, SOURCE_DRIFT, INCIDENT_TRACE_EVIDENCE } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -185,6 +185,11 @@ const hasSourceDriftProof = (state: GameState) => isSourceDriftPhase(state) && i
     isSourceDriftValid(state.connectedEnterprise.sourceDriftIncident) &&
     state.connectedEnterprise.sourceDriftIncident.batchesObserved <= state.connectedEnterprise.productWriteScale.batchesProcessed;
 
+const isIncidentInvestigationEligible = (state: GameState) => state.expansionProgress.era === 'governance_crisis' &&
+    state.expansionProgress.transition === null && hasSourceDriftProof(state) &&
+    state.connectedEnterprise.sourceDriftIncident.customerImpactVisible &&
+    state.connectedEnterprise.sourceDriftIncident.quarantined >= 25 && state.connectedEnterprise.sourceDriftIncident.affectedProducts >= 25;
+
 const policyTrialStep = (state: GameState) => state.expansionProgress.era === 'connected_enterprise' &&
     state.expansionProgress.transition?.targetEra === 'good_enough' ? state.expansionProgress.transition.step : null;
 const hasPolicyTrialProof = (state: GameState) => {
@@ -306,6 +311,12 @@ const hydrateSourceDriftIncident = (saved: any): SourceDriftIncident => {
       affectedProducts: saved.affectedProducts, customerImpactVisible: saved.customerImpactVisible };
 };
 
+const hydrateIncidentInvestigation = (saved: any): IncidentInvestigation => {
+    if (!saved || saved.active !== true || !INCIDENT_INVESTIGATION_STEPS.includes(saved.step) ||
+      saved.rootCauseProven !== (saved.step === 'root_cause_confirmed')) return { ...INITIAL_STATE.connectedEnterprise.incidentInvestigation };
+    return { active: true, step: saved.step, rootCauseProven: saved.rootCauseProven };
+};
+
 const hydrateState = (parsed: any): GameState => {
     const savedWritePilot = parsed.connectedEnterprise?.productWritePilot;
     const validWritePilot = savedWritePilot?.total === 5 && Number.isSafeInteger(savedWritePilot.completed) &&
@@ -317,6 +328,7 @@ const hydrateState = (parsed: any): GameState => {
         ...INITIAL_STATE,
         ...parsed,
         connectedEnterprise: {
+            incidentInvestigation: hydrateIncidentInvestigation(parsed.connectedEnterprise?.incidentInvestigation),
             sourceDriftIncident: hydrateSourceDriftIncident(parsed.connectedEnterprise?.sourceDriftIncident),
             productWriteScale: hydrateProductWriteScale(parsed.connectedEnterprise?.productWriteScale),
             productWritePolicy: hydrateProductWritePolicy(parsed.connectedEnterprise?.productWritePolicy),
@@ -1282,6 +1294,34 @@ export const useGameEngine = () => {
     });
   };
 
+  const beginIncidentInvestigation = () => {
+    setState(prev => {
+      if (!isIncidentInvestigationEligible(prev) || !canPresentPilotIntroduction(prev) || prev.connectedEnterprise.incidentInvestigation.active) return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise,
+        incidentInvestigation: { active: true, step: 'complaint', rootCauseProven: false } } };
+    });
+  };
+  const inspectIncidentTrace = (expectedStep: IncidentInvestigationStep, candidate: string) => {
+    setState(prev => {
+      const investigation = prev.connectedEnterprise.incidentInvestigation;
+      if (!isIncidentInvestigationEligible(prev) || !canPresentPilotIntroduction(prev) || !investigation.active ||
+        investigation.rootCauseProven || investigation.step !== expectedStep || expectedStep === 'root_cause_confirmed') return prev;
+      const next = INCIDENT_TRACE_EVIDENCE[expectedStep]?.choices.find(choice => choice.label === candidate)?.next;
+      if (!next) return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise,
+        incidentInvestigation: { ...investigation, step: next } } };
+    });
+  };
+  const confirmIncidentRootCause = () => {
+    setState(prev => {
+      const investigation = prev.connectedEnterprise.incidentInvestigation;
+      if (!isIncidentInvestigationEligible(prev) || !canPresentPilotIntroduction(prev) || !investigation.active ||
+        investigation.step !== 'rule' || investigation.rootCauseProven) return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise,
+        incidentInvestigation: { ...investigation, step: 'root_cause_confirmed', rootCauseProven: true } } };
+    });
+  };
+
   const manualClean = () => {
     setState(prev => {
       if (prev.blockingTask) return prev; // Blocked
@@ -1839,6 +1879,7 @@ export const useGameEngine = () => {
     productWriteProposal: productWriteAttempt ? (productWriteAttempt.kind === 'queue'
       ? queueWriteProposal(state, productWriteAttempt.index) : productWriteAttempt.kind === 'policy_trial'
         ? getPolicyTrialProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
+    incidentTraceAvailable: isIncidentInvestigationEligible(state) && canPresentPilotIntroduction(state),
     sourceDriftUpdate: { step: sourceDriftFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     writeScaleUpdate: { step: writeScaleFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     writePolicyUpdate: { step: writePolicyFeedbackStep(state), available: canPresentPilotIntroduction(state) },
@@ -1863,7 +1904,7 @@ export const useGameEngine = () => {
       acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
       connectProductDb, acknowledgeConnectedResult,
       grantProductWrite, openProductWriteReview, closeProductWriteReview, applyProductWrite, acknowledgeWriteResult,
-      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale, acknowledgeSourceDrift,
+      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale, acknowledgeSourceDrift, beginIncidentInvestigation, inspectIncidentTrace, confirmIncidentRootCause,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

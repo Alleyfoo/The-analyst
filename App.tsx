@@ -6,6 +6,7 @@ import { Workstation } from './components/Workstation';
 import { DashboardPanel } from './components/DashboardPanel';
 import { EventModal } from './components/EventModal';
 import { ProductWritePolicyEditor } from './components/ProductWritePolicyEditor';
+import { IncidentTrace } from './components/IncidentTrace';
 import { ProductWriteReview } from './components/ProductWriteReview';
 import { AIPilotIntroduction } from './components/AIPilotIntroduction';
 import { SpaghettiOverlay } from './components/SpaghettiOverlay';
@@ -26,7 +27,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable } = useGameEngine();
+  const [incidentTraceOpen, setIncidentTraceOpen] = useState(false);
+  useEffect(() => { if (!incidentTraceAvailable) setIncidentTraceOpen(false); }, [incidentTraceAvailable]);
   const [pilotOpen, setPilotOpen] = useState(false);
   useEffect(() => {
     if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready' || pilotIntroduction.step === 'rollout_review') setPilotOpen(false);
@@ -226,6 +229,10 @@ const App: React.FC = () => {
         onContinue={step => {
           if (step === 'source_drift_detected' || step === 'customer_impact_visible') { actions.acknowledgeSourceDrift(step); setPilotOpen(false); }
         }} onLater={() => setPilotOpen(false)} />}
+      {incidentTraceOpen && incidentTraceAvailable && state.connectedEnterprise.incidentInvestigation.active && <IncidentTrace
+        key={state.connectedEnterprise.incidentInvestigation.step}
+        investigation={state.connectedEnterprise.incidentInvestigation} incident={state.connectedEnterprise.sourceDriftIncident}
+        onInspect={actions.inspectIncidentTrace} onConfirm={actions.confirmIncidentRootCause} onLater={() => setIncidentTraceOpen(false)} />}
       {productWriteAttempt && productWriteProposal && <ProductWriteReview attempt={productWriteAttempt} proposal={productWriteProposal}
         reviewBacklog={state.connectedEnterprise.productWriteScale.active && productWriteAttempt.kind === 'queue' ? state.connectedEnterprise.productWriteScale.reviewBacklog : undefined}
         queueMode={productWriteAttempt.kind === 'queue'} trialMode={productWriteAttempt.kind === 'policy_trial'}
@@ -285,6 +292,8 @@ const App: React.FC = () => {
                 writeQueueUpdate={writeQueueUpdate}
                 writeScaleUpdate={writeScaleUpdate}
                 sourceDriftUpdate={sourceDriftUpdate}
+                incidentTraceAvailable={incidentTraceAvailable}
+                onOpenIncidentTrace={() => { actions.beginIncidentInvestigation(); setIncidentTraceOpen(true); }}
                 writePolicyUpdate={writePolicyUpdate}
                 policyTrialAvailable={policyTrialAvailable}
                 onReviewPolicyTrial={actions.openPolicyTrialWrite}
