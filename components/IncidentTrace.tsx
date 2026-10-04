@@ -40,8 +40,8 @@ export const IncidentTrace: React.FC<Props> = ({ investigation, incident, onInsp
           }} className="w-full text-left px-3 py-2 rounded border border-slate-700 hover:bg-slate-800 text-sm text-slate-200">{choice.label}</button>)}</div>
         {observation && <p role="status" className="mt-3 p-3 rounded bg-slate-800 text-sm text-slate-300">{observation}</p>}
       </>}
-      <p className="mt-4 text-xs text-amber-200">Live quarantine: {incident.quarantined.toLocaleString()} · Current affected products: {incident.affectedProducts.toLocaleString()}</p>
-      <p className="mt-1 text-xs text-slate-400">The sample record stays stable. The incident continues; understanding does not repair it.</p>
+      <p className="mt-4 text-xs text-amber-200">{incident.active ? 'Live quarantine' : 'Historical quarantine'}: {incident.quarantined.toLocaleString()} · Current affected products: {incident.affectedProducts.toLocaleString()}</p>
+      <p className="mt-1 text-xs text-slate-400">{incident.active ? 'The sample record stays stable. The incident continues; understanding does not repair it.' : 'This trace preserves the original incident evidence. The governed source repair is recorded separately.'}</p>
       <button onClick={onLater} className="w-full mt-3 py-2 text-sm text-slate-400 hover:text-slate-200">Later</button>
     </section>
   </div>;

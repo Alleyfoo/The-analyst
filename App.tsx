@@ -6,6 +6,7 @@ import { Workstation } from './components/Workstation';
 import { DashboardPanel } from './components/DashboardPanel';
 import { EventModal } from './components/EventModal';
 import { ProductWritePolicyEditor } from './components/ProductWritePolicyEditor';
+import { SourceContractRepair } from './components/SourceContractRepair';
 import { IncidentTrace } from './components/IncidentTrace';
 import { ProductWriteReview } from './components/ProductWriteReview';
 import { AIPilotIntroduction } from './components/AIPilotIntroduction';
@@ -27,7 +28,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, sourceRemediationAvailable } = useGameEngine();
+  const [sourceRepairOpen, setSourceRepairOpen] = useState(false);
+  useEffect(() => { if (!sourceRemediationAvailable) setSourceRepairOpen(false); }, [sourceRemediationAvailable]);
   const [incidentTraceOpen, setIncidentTraceOpen] = useState(false);
   useEffect(() => { if (!incidentTraceAvailable) setIncidentTraceOpen(false); }, [incidentTraceAvailable]);
   const [pilotOpen, setPilotOpen] = useState(false);
@@ -229,6 +232,10 @@ const App: React.FC = () => {
         onContinue={step => {
           if (step === 'source_drift_detected' || step === 'customer_impact_visible') { actions.acknowledgeSourceDrift(step); setPilotOpen(false); }
         }} onLater={() => setPilotOpen(false)} />}
+      {sourceRepairOpen && sourceRemediationAvailable && state.connectedEnterprise.sourceDriftRemediation.active && <SourceContractRepair
+        repair={state.connectedEnterprise.sourceDriftRemediation} incident={state.connectedEnterprise.sourceDriftIncident}
+        onClarify={actions.requestSupplierClarification} onApprove={actions.approveSourceWidthRule}
+        onReprocess={actions.reprocessSourceQuarantine} onLater={() => setSourceRepairOpen(false)} />}
       {incidentTraceOpen && incidentTraceAvailable && state.connectedEnterprise.incidentInvestigation.active && <IncidentTrace
         key={state.connectedEnterprise.incidentInvestigation.step}
         investigation={state.connectedEnterprise.incidentInvestigation} incident={state.connectedEnterprise.sourceDriftIncident}
@@ -292,6 +299,8 @@ const App: React.FC = () => {
                 writeQueueUpdate={writeQueueUpdate}
                 writeScaleUpdate={writeScaleUpdate}
                 sourceDriftUpdate={sourceDriftUpdate}
+                sourceRemediationAvailable={sourceRemediationAvailable}
+                onOpenSourceRepair={() => { actions.beginSourceRemediation(); setSourceRepairOpen(true); }}
                 incidentTraceAvailable={incidentTraceAvailable}
                 onOpenIncidentTrace={() => { actions.beginIncidentInvestigation(); setIncidentTraceOpen(true); }}
                 writePolicyUpdate={writePolicyUpdate}

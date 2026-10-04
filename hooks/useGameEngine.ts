@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale, SourceDriftIncident, IncidentInvestigation, IncidentInvestigationStep, INCIDENT_INVESTIGATION_STEPS } from '../types';
+import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale, SourceDriftIncident, IncidentInvestigation, IncidentInvestigationStep, INCIDENT_INVESTIGATION_STEPS, SourceDriftRemediation, SOURCE_REMEDIATION_STEPS } from '../types';
 import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal, PRODUCT_WRITE_BATCH_SIZE, SOURCE_DRIFT, INCIDENT_TRACE_EVIDENCE } from '../constants';
 
 // Board Meeting Settings
@@ -23,12 +23,24 @@ const sourceDriftStep = (state: GameState) => state.expansionProgress.era === 'l
 const isSourceDriftPhase = (state: GameState) =>
     ['source_drift_detected', 'quarantine_monitoring', 'customer_impact_visible'].includes(sourceDriftStep(state) ?? '') ||
     (state.expansionProgress.era === 'governance_crisis' && state.expansionProgress.transition === null);
-const isSourceDriftValid = (incident: SourceDriftIncident) => incident.active === true &&
+const isSourceRemediationValid = (repair: SourceDriftRemediation) => typeof repair.active === 'boolean' &&
+    SOURCE_REMEDIATION_STEPS.includes(repair.step) && Number.isSafeInteger(repair.resolvedProducts) && repair.resolvedProducts >= 0 &&
+    repair.supplierSemanticsConfirmed === (repair.step !== 'supplier_clarification') &&
+    repair.ruleApproved === ['backfill_ready', 'remediation_complete'].includes(repair.step) &&
+    (repair.step === 'remediation_complete' ? repair.resolvedProducts > 0 : repair.resolvedProducts === 0) &&
+    (repair.active || (repair.step === 'supplier_clarification' && !repair.supplierSemanticsConfirmed && !repair.ruleApproved && repair.resolvedProducts === 0));
+const hasSourceDriftHistory = (incident: SourceDriftIncident) => typeof incident.active === 'boolean' &&
     ['batchesObserved', 'quarantined', 'affectedProducts'].every(key =>
       Number.isSafeInteger(incident[key as keyof SourceDriftIncident]) && Number(incident[key as keyof SourceDriftIncident]) >= 0) &&
-    incident.quarantined / SOURCE_DRIFT.recordsPerBatch === incident.batchesObserved &&
-    incident.affectedProducts === incident.quarantined &&
+    incident.quarantined / SOURCE_DRIFT.recordsPerBatch === incident.batchesObserved && incident.affectedProducts <= incident.quarantined &&
     incident.customerImpactVisible === (incident.batchesObserved >= SOURCE_DRIFT.impactBatches);
+const isSourceDriftValid = (incident: SourceDriftIncident, repair: SourceDriftRemediation) => hasSourceDriftHistory(incident) &&
+    isSourceRemediationValid(repair) && Number.isSafeInteger(incident.affectedProducts + repair.resolvedProducts) &&
+    incident.affectedProducts + repair.resolvedProducts === incident.quarantined &&
+    (incident.active ? !repair.ruleApproved && repair.resolvedProducts === 0 :
+      repair.active && repair.ruleApproved && incident.customerImpactVisible &&
+      (repair.step === 'backfill_ready' ? incident.affectedProducts === incident.quarantined && incident.affectedProducts > 0 :
+        repair.step === 'remediation_complete' && incident.affectedProducts === 0 && repair.resolvedProducts === incident.quarantined));
 
 const hasAcceleratedAIReviewDemand = (state: GameState) =>
     (state.expansionProgress.era === 'acceleration' && (state.expansionProgress.transition === null ||
@@ -168,12 +180,13 @@ const isProductWriteQueueActive = (state: GameState) => {
     const prePolicy = state.expansionProgress.era === 'connected_enterprise' && state.expansionProgress.transition?.targetEra === 'good_enough' &&
       ['approval_queue_active', 'approval_bottleneck_visible', 'approval_policy_offer', 'policy_trial_active', 'policy_trial_success'].includes(state.expansionProgress.transition.step);
     const policy = state.connectedEnterprise.productWritePolicy;
+    const expectedWrites = 5 + queue.completed + (policy.configured ? policy.trial.autoApplied + policy.trial.manualApproved + policy.autoAppliedTotal : 0) + state.connectedEnterprise.sourceDriftRemediation.resolvedProducts;
     return (prePolicy || isOperationalWritePolicy(state)) &&
       hasWritePilotProof(state) && queue.active && queue.arrivalIntervalTicks === PRODUCT_WRITE_QUEUE_INTERVAL_TICKS &&
       queue.pending <= PRODUCT_WRITE_QUEUE_CAP &&
       Number.isSafeInteger(queue.pending + state.connectedEnterprise.productWriteScale.reviewBacklog + queue.completed) &&
       queue.pending + state.connectedEnterprise.productWriteScale.reviewBacklog + queue.completed === PRODUCT_WRITE_QUEUE_INITIAL + queue.totalArrived &&
-      state.connectedEnterprise.writeUses >= 5 + queue.completed + (policy.configured ? policy.trial.autoApplied + policy.trial.manualApproved + policy.autoAppliedTotal : 0);
+      Number.isSafeInteger(expectedWrites) && state.connectedEnterprise.writeUses >= expectedWrites;
 };
 const isBatchRoutingEligible = (state: GameState) => state.expansionProgress.era === 'good_enough' &&
     state.expansionProgress.transition === null && isProductWriteQueueActive(state) && !state.connectedEnterprise.productWriteScale.active;
@@ -182,13 +195,23 @@ const isSourceDriftEligible = (state: GameState) => state.expansionProgress.era 
     state.expansionProgress.transition === null && isProductWriteQueueActive(state) && isProductWriteScaleValid(state) &&
     !state.connectedEnterprise.sourceDriftIncident.active;
 const hasSourceDriftProof = (state: GameState) => isSourceDriftPhase(state) && isProductWriteQueueActive(state) &&
-    isSourceDriftValid(state.connectedEnterprise.sourceDriftIncident) &&
+    isSourceDriftValid(state.connectedEnterprise.sourceDriftIncident, state.connectedEnterprise.sourceDriftRemediation) &&
     state.connectedEnterprise.sourceDriftIncident.batchesObserved <= state.connectedEnterprise.productWriteScale.batchesProcessed;
 
 const isIncidentInvestigationEligible = (state: GameState) => state.expansionProgress.era === 'governance_crisis' &&
     state.expansionProgress.transition === null && hasSourceDriftProof(state) &&
     state.connectedEnterprise.sourceDriftIncident.customerImpactVisible &&
     state.connectedEnterprise.sourceDriftIncident.quarantined >= 25 && state.connectedEnterprise.sourceDriftIncident.affectedProducts >= 25;
+
+const hasConfirmedIncidentRootCause = (state: GameState) => state.expansionProgress.era === 'governance_crisis' &&
+    state.expansionProgress.transition === null && state.connectedEnterprise.incidentInvestigation.active &&
+    state.connectedEnterprise.incidentInvestigation.step === 'root_cause_confirmed' && state.connectedEnterprise.incidentInvestigation.rootCauseProven;
+const isSourceRemediationAvailable = (state: GameState) => hasConfirmedIncidentRootCause(state) && hasSourceDriftProof(state) &&
+    state.connectedEnterprise.sourceDriftIncident.customerImpactVisible &&
+    (state.connectedEnterprise.sourceDriftRemediation.active ||
+      (state.connectedEnterprise.sourceDriftIncident.active && state.connectedEnterprise.sourceDriftIncident.affectedProducts > 0));
+const canReviewIncidentTrace = (state: GameState) => isIncidentInvestigationEligible(state) ||
+    (hasConfirmedIncidentRootCause(state) && hasSourceDriftProof(state) && state.connectedEnterprise.sourceDriftRemediation.ruleApproved);
 
 const policyTrialStep = (state: GameState) => state.expansionProgress.era === 'connected_enterprise' &&
     state.expansionProgress.transition?.targetEra === 'good_enough' ? state.expansionProgress.transition.step : null;
@@ -230,7 +253,7 @@ const arriveProductWrite = (prev: GameState, tick: number): Partial<GameState> =
       const manual = PRODUCT_WRITE_BATCH_SIZE - automatic;
       const loaded = Math.min(manual, PRODUCT_WRITE_QUEUE_CAP - queue.pending);
       const incident = prev.connectedEnterprise.sourceDriftIncident;
-      const observeDrift = hasSourceDriftProof(prev);
+      const observeDrift = incident.active && hasSourceDriftProof(prev);
       const additions = [[prev.connectedEnterprise.writeUses, automatic], [policy.autoAppliedTotal, automatic],
         [policy.manualRoutedTotal, manual], [policy.routeSequence, PRODUCT_WRITE_BATCH_SIZE], [queue.totalArrived, manual],
         [scale.batchesProcessed, 1], [scale.totalRouted, PRODUCT_WRITE_BATCH_SIZE], [scale.autoApplied, automatic],
@@ -305,9 +328,15 @@ const hydrateProductWriteScale = (saved: any): ProductWriteScale => {
       totalRouted: saved.totalRouted, autoApplied: saved.autoApplied, reviewRouted: saved.reviewRouted, reviewBacklog: saved.reviewBacklog };
 };
 
-const hydrateSourceDriftIncident = (saved: any): SourceDriftIncident => {
-    if (!saved || !isSourceDriftValid(saved)) return { ...INITIAL_STATE.connectedEnterprise.sourceDriftIncident };
-    return { active: true, batchesObserved: saved.batchesObserved, quarantined: saved.quarantined,
+const hydrateSourceDriftRemediation = (saved: any): SourceDriftRemediation => {
+    if (!saved || !isSourceRemediationValid(saved)) return { ...INITIAL_STATE.connectedEnterprise.sourceDriftRemediation };
+    return { active: saved.active, step: saved.step, supplierSemanticsConfirmed: saved.supplierSemanticsConfirmed,
+      ruleApproved: saved.ruleApproved, resolvedProducts: saved.resolvedProducts };
+};
+const hydrateSourceDriftIncident = (saved: any, savedRepair: any): SourceDriftIncident => {
+    if (!saved || !hasSourceDriftHistory(saved) || (saved.active && saved.affectedProducts !== saved.quarantined && savedRepair?.active !== true))
+      return { ...INITIAL_STATE.connectedEnterprise.sourceDriftIncident };
+    return { active: saved.active, batchesObserved: saved.batchesObserved, quarantined: saved.quarantined,
       affectedProducts: saved.affectedProducts, customerImpactVisible: saved.customerImpactVisible };
 };
 
@@ -328,8 +357,9 @@ const hydrateState = (parsed: any): GameState => {
         ...INITIAL_STATE,
         ...parsed,
         connectedEnterprise: {
+            sourceDriftRemediation: hydrateSourceDriftRemediation(parsed.connectedEnterprise?.sourceDriftRemediation),
             incidentInvestigation: hydrateIncidentInvestigation(parsed.connectedEnterprise?.incidentInvestigation),
-            sourceDriftIncident: hydrateSourceDriftIncident(parsed.connectedEnterprise?.sourceDriftIncident),
+            sourceDriftIncident: hydrateSourceDriftIncident(parsed.connectedEnterprise?.sourceDriftIncident, parsed.connectedEnterprise?.sourceDriftRemediation),
             productWriteScale: hydrateProductWriteScale(parsed.connectedEnterprise?.productWriteScale),
             productWritePolicy: hydrateProductWritePolicy(parsed.connectedEnterprise?.productWritePolicy),
             productDb: { connected: parsed.connectedEnterprise?.productDb?.connected === true && ['read', 'read_write'].includes(parsed.connectedEnterprise.productDb.access),
@@ -395,6 +425,17 @@ const hydrateState = (parsed: any): GameState => {
         coffeeBreak: { ...INITIAL_STATE.coffeeBreak, ...(parsed.coffeeBreak || {}) },
         lastCoffeeTick: parsed.lastCoffeeTick || -9999,
     };
+
+    // S14 containment/backfill must retain a coherent semantic approval and prior causal proof.
+    const incident = state.connectedEnterprise.sourceDriftIncident;
+    const repair = state.connectedEnterprise.sourceDriftRemediation;
+    if (!isSourceDriftValid(incident, repair) || (repair.active && (!hasConfirmedIncidentRootCause(state) || !isProductWriteQueueActive(state)))) {
+        state.connectedEnterprise.sourceDriftRemediation = { ...INITIAL_STATE.connectedEnterprise.sourceDriftRemediation };
+        // Invalid repair authority cannot clear valid historical work or silently contain its source.
+        state.connectedEnterprise.sourceDriftIncident = hasSourceDriftHistory(incident) && incident.quarantined > 0
+          ? { ...incident, active: true, affectedProducts: incident.quarantined }
+          : { ...INITIAL_STATE.connectedEnterprise.sourceDriftIncident };
+    }
 
     // Hydrate Active Events (reattach functions from constants)
     state.activeEvents = (parsed.activeEvents || []).map((savedEv: any) => {
@@ -1322,6 +1363,47 @@ export const useGameEngine = () => {
     });
   };
 
+  const beginSourceRemediation = () => {
+    setState(prev => {
+      if (!isSourceRemediationAvailable(prev) || !canPresentPilotIntroduction(prev) || prev.connectedEnterprise.sourceDriftRemediation.active) return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise,
+        sourceDriftRemediation: { ...INITIAL_STATE.connectedEnterprise.sourceDriftRemediation, active: true } } };
+    });
+  };
+  const requestSupplierClarification = () => {
+    setState(prev => {
+      const repair = prev.connectedEnterprise.sourceDriftRemediation;
+      if (!isSourceRemediationAvailable(prev) || !canPresentPilotIntroduction(prev) || !repair.active || repair.step !== 'supplier_clarification' ||
+        !prev.connectedEnterprise.sourceDriftIncident.active) return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise,
+        sourceDriftRemediation: { ...repair, step: 'rule_review', supplierSemanticsConfirmed: true } } };
+    });
+  };
+  const approveSourceWidthRule = () => {
+    setState(prev => {
+      const repair = prev.connectedEnterprise.sourceDriftRemediation;
+      if (!isSourceRemediationAvailable(prev) || !canPresentPilotIntroduction(prev) || !repair.active || repair.step !== 'rule_review' ||
+        !repair.supplierSemanticsConfirmed || repair.ruleApproved || !prev.connectedEnterprise.sourceDriftIncident.active) return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise,
+        sourceDriftRemediation: { ...repair, step: 'backfill_ready', ruleApproved: true },
+        sourceDriftIncident: { ...prev.connectedEnterprise.sourceDriftIncident, active: false } } };
+    });
+  };
+  const reprocessSourceQuarantine = () => {
+    setState(prev => {
+      const repair = prev.connectedEnterprise.sourceDriftRemediation;
+      const incident = prev.connectedEnterprise.sourceDriftIncident;
+      if (!isSourceRemediationAvailable(prev) || !canPresentPilotIntroduction(prev) || !repair.active || repair.step !== 'backfill_ready' ||
+        !repair.ruleApproved || !repair.supplierSemanticsConfirmed || incident.active || incident.affectedProducts <= 0 ||
+        !Number.isSafeInteger(prev.connectedEnterprise.writeUses + incident.affectedProducts) ||
+        !Number.isSafeInteger(repair.resolvedProducts + incident.affectedProducts)) return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise,
+        writeUses: prev.connectedEnterprise.writeUses + incident.affectedProducts,
+        sourceDriftRemediation: { ...repair, step: 'remediation_complete', resolvedProducts: repair.resolvedProducts + incident.affectedProducts },
+        sourceDriftIncident: { ...incident, affectedProducts: 0 } } };
+    });
+  };
+
   const manualClean = () => {
     setState(prev => {
       if (prev.blockingTask) return prev; // Blocked
@@ -1879,7 +1961,8 @@ export const useGameEngine = () => {
     productWriteProposal: productWriteAttempt ? (productWriteAttempt.kind === 'queue'
       ? queueWriteProposal(state, productWriteAttempt.index) : productWriteAttempt.kind === 'policy_trial'
         ? getPolicyTrialProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
-    incidentTraceAvailable: isIncidentInvestigationEligible(state) && canPresentPilotIntroduction(state),
+    sourceRemediationAvailable: isSourceRemediationAvailable(state) && canPresentPilotIntroduction(state),
+    incidentTraceAvailable: canReviewIncidentTrace(state) && canPresentPilotIntroduction(state),
     sourceDriftUpdate: { step: sourceDriftFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     writeScaleUpdate: { step: writeScaleFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     writePolicyUpdate: { step: writePolicyFeedbackStep(state), available: canPresentPilotIntroduction(state) },
@@ -1904,7 +1987,7 @@ export const useGameEngine = () => {
       acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
       connectProductDb, acknowledgeConnectedResult,
       grantProductWrite, openProductWriteReview, closeProductWriteReview, applyProductWrite, acknowledgeWriteResult,
-      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale, acknowledgeSourceDrift, beginIncidentInvestigation, inspectIncidentTrace, confirmIncidentRootCause,
+      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale, acknowledgeSourceDrift, beginIncidentInvestigation, inspectIncidentTrace, confirmIncidentRootCause, beginSourceRemediation, requestSupplierClarification, approveSourceWidthRule, reprocessSourceQuarantine,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

@@ -40,6 +40,8 @@ interface Props {
   writeUpdate: { step: 'write_access_offer' | 'write_pilot_success' | null; available: boolean };
   productWriteAvailable: boolean;
   writeQueueUpdate: { step: 'approval_rollout_ready' | 'approval_bottleneck_visible' | null; available: boolean };
+  sourceRemediationAvailable: boolean;
+  onOpenSourceRepair: () => void;
   incidentTraceAvailable: boolean;
   onOpenIncidentTrace: () => void;
   sourceDriftUpdate: { step: 'source_drift_detected' | 'customer_impact_visible' | null; available: boolean };
@@ -83,7 +85,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, onOpenIncidentTrace }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, onOpenIncidentTrace, sourceRemediationAvailable, onOpenSourceRepair }) => {
   const writeVelocity = getProductWriteVelocity(state.connectedEnterprise.productWritePolicy.autoClasses.length);
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -224,15 +226,20 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
       )}
       {(connectedUpdate.step || state.connectedEnterprise.productDb.connected) && <div className="shrink-0 border-b border-blue-800/50 bg-blue-950/30 p-3 text-xs text-slate-300">
         {state.connectedEnterprise.productDb.connected && <p className="font-bold text-blue-200">CONNECTED SYSTEMS · Product DB · {state.connectedEnterprise.productDb.access === 'read_write' ? (state.connectedEnterprise.productWritePolicy.configured ? 'READ + WRITE · BOUNDED APPROVAL POLICY' : 'READ + WRITE · HUMAN APPROVAL REQUIRED') : 'READ ONLY'}</p>}
-        {state.connectedEnterprise.sourceDriftIncident.active && <div className="mt-2 border border-amber-700/50 rounded p-2 space-y-1">
-          <p className="font-bold text-amber-200">SOURCE QUALITY · DRIFT DETECTED</p>
+        {(state.connectedEnterprise.sourceDriftIncident.active || state.connectedEnterprise.sourceDriftIncident.quarantined > 0) && <div className="mt-2 border border-amber-700/50 rounded p-2 space-y-1">
+          <p className="font-bold text-amber-200">{state.connectedEnterprise.sourceDriftIncident.active ? 'SOURCE QUALITY · DRIFT DETECTED' : 'SOURCE QUALITY · DRIFT CONTAINED'}</p>
           <p>Supplier Width · EXPECTED: {SOURCE_DRIFT.expected} · OBSERVED: {SOURCE_DRIFT.observed}</p>
           <p>QUARANTINED: {state.connectedEnterprise.sourceDriftIncident.quarantined.toLocaleString()} · AFFECTED PRODUCTS: {state.connectedEnterprise.sourceDriftIncident.affectedProducts.toLocaleString()}</p>
-          <p>STATUS: NO WRITE ATTEMPTED · Upstream quarantine, separate from write review</p>
+          <p>{state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' ? 'CURRENT CUSTOMER IMPACT: RESOLVED · CUSTOMER WIDTH FILTER: RESTORED' : state.connectedEnterprise.sourceDriftRemediation.ruleApproved ? 'NEW SOURCE QUARANTINE: STOPPED · Historical products await backfill' : 'STATUS: NO WRITE ATTEMPTED · Upstream quarantine, separate from write review'}</p>
           {state.expansionProgress.era === 'governance_crisis' && state.expansionProgress.transition === null && state.connectedEnterprise.sourceDriftIncident.customerImpactVisible && <>
             {state.connectedEnterprise.incidentInvestigation.rootCauseProven ? <>
               <p className="font-bold text-amber-200">ROOT CAUSE: CONFIRMED · Source contract drift</p>
-              <p>Containment: QUARANTINED · Remediation: NOT DEFINED</p>
+              <p>Containment: {state.connectedEnterprise.sourceDriftIncident.active ? 'QUARANTINED' : 'SOURCE CONTRACT UPDATED'} · Remediation: {state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' ? 'COMPLETE' : state.connectedEnterprise.sourceDriftRemediation.active ? 'IN PROGRESS' : 'NOT DEFINED'}</p>
+              {state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' && <p>REPROCESSED: {state.connectedEnterprise.sourceDriftRemediation.resolvedProducts.toLocaleString()} · EXECUTIVE REVIEW: READY</p>}
+              <button onClick={onOpenSourceRepair} disabled={!sourceRemediationAvailable}
+                className="mt-2 w-full py-2 border border-amber-500 rounded text-amber-200 disabled:opacity-40 hover:bg-amber-900/30">
+                {state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' ? 'REVIEW REMEDIATION' : state.connectedEnterprise.sourceDriftRemediation.active ? 'CONTINUE REMEDIATION' : 'DEFINE REMEDIATION'}
+              </button>
             </> : <p>INCIDENT RESPONSE · Customer impact confirmed · Source quarantine active</p>}
             <button onClick={onOpenIncidentTrace} disabled={!incidentTraceAvailable}
               className="mt-2 w-full py-2 border border-amber-500 rounded text-amber-200 disabled:opacity-40 hover:bg-amber-900/30">

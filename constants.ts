@@ -806,3 +806,10 @@ export const INCIDENT_TRACE_SUMMARY = [
   'RULE — approximation semantics not governed',
   'ROOT CAUSE — source contract drift outside established transform',
 ] as const;
+
+// S14 is a supplier Width contract amendment, separate from the immutable S10 write policy.
+export const SOURCE_WIDTH_AMENDMENT = {
+  supplierResponse: 'The tilde indicates a nominal dimension. Actual manufactured width may vary by ±2 cm.',
+  acceptedForm: '~<number> cm', nominalWidth: 45, qualifier: 'APPROXIMATE', tolerance: '±2 cm',
+  scope: 'Supplier feed · Width field only',
+} as const;

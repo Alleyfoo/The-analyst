@@ -2,7 +2,7 @@
 
 This inventory covers every `types.ts::GameState` field. Initial values come from `types.ts::INITIAL_STATE`; writes come from `hooks/useGameEngine.ts::useGameEngine` actions/update loop and `constants.ts` effects. All fields below are serialized to `the_analyst_save_v1`, even derived values. Persistence does not imply validation or an invariant enforced on every write.
 
-S0 added persisted expansion progression, S1 the organisational handoff, S2 one assistive SQL trial, S3 a finite review queue, G1 an Ascension boundary, S4 continuous SQL demand, S5 accelerated routing/explicit Acceleration establishment, S6 two schema exception batches, S7 local Product DB read context/Connected Enterprise, S8 a bounded five-write pilot, S9 recurring human-approved Product DB writebacks, S10 bounded write policy/Good Enough, S11 aggregate batch routing/Lightspeed, S12 source-drift quarantine/Governance-Crisis, and S13 an authored root-cause investigation. Original resource/update rules remain unchanged. The design authority remains [AI_EXPANSION.md](../design/AI_EXPANSION.md), whose baseline evidence describes the pre-S0 snapshot.
+S0 added persisted expansion progression, S1 the organisational handoff, S2 one assistive SQL trial, S3 a finite review queue, G1 an Ascension boundary, S4 continuous SQL demand, S5 accelerated routing/explicit Acceleration establishment, S6 two schema exception batches, S7 local Product DB read context/Connected Enterprise, S8 a bounded five-write pilot, S9 recurring human-approved Product DB writebacks, S10 bounded write policy/Good Enough, S11 aggregate batch routing/Lightspeed, S12 source-drift quarantine/Governance-Crisis, S13 an authored root-cause investigation, and S14 a governed source-contract repair. Original resource/update rules remain unchanged. The design authority remains [AI_EXPANSION.md](../design/AI_EXPANSION.md), whose baseline evidence describes the pre-S0 snapshot.
 
 | Purpose | Fields and initial values | Meaning / writers |
 | --- | --- | --- |
@@ -341,3 +341,32 @@ Wrong branches distinguish healthy write service, unrelated SQL/marketing/compan
 The sample/evidence are deterministic fictional scenario facts, not one stored object per affected product, actual database/storefront/filter execution or an independent audit trail. `IncidentTrace` reads the live incident totals every render. Existing500/10 routing, fixed policy mix,37-window/backlog/manual approval, +5quarantines/batch and independent20-tick/cap12/human SQL continue while the trace is open and after proof. No counters freeze, rewards/penalties occur or quarantine is released.
 
 `hydrateIncidentInvestigation` accepts strict active true, a known stage and rootCauseProven exactly matching the confirmed stage; malformed/missing/inactive state restores the empty default without granting proof. Operational actions/UI still require current S12 evidence. Whole-state2-second autosave persists investigation alongside incident and old schedules. App's `incidentTraceOpen` and wrong-branch observations are transient; closing/reloading changes no stage and never force-opens, auto-advances/confirms or replays historical/offline batches. Continue resumes the saved stage; confirmed review repeats only presentation. Baseline unsaved-window behavior remains. G1/factory reset unchanged. No remediation, rule/source edits, symptom patch, supplier repair, pause/release/rollback, policy edits, confidence, new permissions/systems, executive review, ending, Access Matrix or external service is implemented.
+
+
+## Governed source-contract repair (S14)
+
+`types.ts::SourceDriftRemediation` is saved at `connectedEnterprise.sourceDriftRemediation`:
+
+```ts
+{ active: false, step: 'supplier_clarification',
+  supplierSemanticsConfirmed: false, ruleApproved: false, resolvedProducts: 0 }
+```
+
+`active` means started, including the completed result. Steps are exactly `supplier_clarification`, `rule_review`, `backfill_ready`, `remediation_complete`. `useGameEngine::isSourceRemediationAvailable` requires governance_crisis/null, active confirmed S13 causal proof and coherent customer-experienced S12 history/write service. Initial entry additionally requires active unresolved drift. Workstation's DEFINE REMEDIATION calls `beginSourceRemediation`; App's opt-in `SourceContractRepair` dialog never force-opens. Starting changes only remediation state.
+
+`requestSupplierClarification` explicitly advances to rule_review and records semantic confirmation. `constants.ts::SOURCE_WIDTH_AMENDMENT` authors the response: tilde means nominal dimension, manufactured width varies ±2 cm. The proposed supplier-feed/Width-only contract accepts `~<number> cm`, preserving numeric nominal Width **and APPROXIMATE qualifier**, with supplier tolerance ±2 cm. This is persisted semantic authority with authored evidence, not an executable generic schema/parser or per-product dataset. The original exact rule was correct for its known contract. Clarification alone stops nothing.
+
+`approveSourceWidthRule` requires exact rule_review, confirmed supplier semantics, proven cause and still-unresolved incident. It sets ruleApproved, backfill_ready and incident.active=false. `arriveProductWrite` now adds incident evidence only while incident.active. Historical quarantine/current affected counts remain unchanged at approval; ordinary500 validated intents/10ticks continue with fixed S10 policy. Former five incident records are not added to routine totals.
+
+Updated meanings/invariants (`hasSourceDriftHistory`, `isSourceDriftValid`):
+
+- batchesObserved/quarantined remain historical, with quarantined=5*batchesObserved.
+- affectedProducts is current unresolved work; resolvedProducts is successfully repaired historical work. Their safe-integer sum equals quarantined.
+- Before backfill, resolvedProducts=0 and affectedProducts=quarantined. After complete backfill, affectedProducts=0 and resolvedProducts=quarantined.
+- customerImpactVisible remains historical evidence (five observed batches), including after successful repair. Contained states require approved active remediation; completed state requires positive resolved count and coherent prior proof.
+
+`reprocessSourceQuarantine` explicitly authorizes one bounded batch outside the37-item ordinary review window. Exact backfill_ready/approved rule/inactive source/current affected>0 and safe additions are required. It adds affectedProducts to writeUses and resolvedProducts, sets affectedProducts=0 and remediation_complete. Duplicate/replayed actions do nothing. Queue, policy and scale counters are untouched; no PU/TU/data/metrics/quality or economic reward. `isProductWriteQueueActive` includes resolvedProducts in minimum write-use proof, keeping repair writes distinct from ordinary routing.
+
+`SourceContractRepair` verifies authored sample P-DRIFT-0042/Modular Shelf: missing Width/not indexed becomes Width45 + APPROXIMATE/indexed in45cm filter. Workstation retains historical totals, current resolved status and EXECUTIVE REVIEW READY. `canReviewIncidentTrace` preserves completed S13 trace access after backfill; `IncidentTrace` labels it historical evidence. Era remains governance_crisis/null, root proof unchanged. Ready is status only: no executive review, ending or automation-programme continuation decision occurs.
+
+Whole-state localStorage autosave persists confirmation, rule authority, historical/current counts and completion. Hydration helpers validate exact booleans/stages, safe counts, sum, causal proof and write authority. Invalid repair defaults empty and restores coherent historical quarantine as active/current unresolved; it cannot manufacture containment, completion or writeUses. Incoherent incident history still uses the original empty fallback. Reload preserves approved containment and once-only backfill without reopening dialogs, requesting clarification again, replaying writes or offline repair. Existing two-second unsaved window remains. SQL/manual work, immutable policy, G1/factory reset and baseline rules remain preserved.
