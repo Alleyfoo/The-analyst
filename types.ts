@@ -228,8 +228,15 @@ export interface ProductWriteScale {
   reviewBacklog: number;
 }
 
+export type AccessLevel = 0 | 1 | 2 | 3;
+export interface ExpansionEndingState {
+  route: null | 'govern_machine';
+  accessMatrix: { active: boolean; cells: AccessLevel[]; moves: number; stabilizedOnce: boolean };
+}
+
 export interface GameState {
   // Persisted progression authority and purpose-specific finite SQL workload.
+  expansionEnding: ExpansionEndingState;
   expansionProgress: ExpansionProgress;
   aiReviewQueue: { pending: number; completed: number; wave: number };
   aiReviewDemand: { active: boolean; arrivalIntervalTicks: number; nextArrivalTick: number; totalArrived: number; totalCompleted: number; acceleratedArrivals: number; acceleratedReviews: number; acceleratedPeakPending: number };
@@ -304,6 +311,7 @@ export interface GameState {
 }
 
 export const INITIAL_STATE: GameState = {
+  expansionEnding: { route: null, accessMatrix: { active: false, cells: [], moves: 0, stabilizedOnce: false } },
   expansionProgress: { era: 'analyst', transition: null },
   aiReviewQueue: { pending: 0, completed: 0, wave: 0 },
   aiReviewDemand: { active: false, arrivalIntervalTicks: 40, nextArrivalTick: 0, totalArrived: 0, totalCompleted: 0, acceleratedArrivals: 0, acceleratedReviews: 0, acceleratedPeakPending: 0 },

@@ -2,7 +2,7 @@
 
 This inventory covers every `types.ts::GameState` field. Initial values come from `types.ts::INITIAL_STATE`; writes come from `hooks/useGameEngine.ts::useGameEngine` actions/update loop and `constants.ts` effects. All fields below are serialized to `the_analyst_save_v1`, even derived values. Persistence does not imply validation or an invariant enforced on every write.
 
-S0 added persisted expansion progression, S1 the organisational handoff, S2 one assistive SQL trial, S3 a finite review queue, G1 an Ascension boundary, S4 continuous SQL demand, S5 accelerated routing/explicit Acceleration establishment, S6 two schema exception batches, S7 local Product DB read context/Connected Enterprise, S8 a bounded five-write pilot, S9 recurring human-approved Product DB writebacks, S10 bounded write policy/Good Enough, S11 aggregate batch routing/Lightspeed, S12 source-drift quarantine/Governance-Crisis, S13 an authored root-cause investigation, S14 a governed source-contract repair, and S15 an executive review/organisational rollout acknowledgement. Original resource/update rules remain unchanged. The design authority remains [AI_EXPANSION.md](../design/AI_EXPANSION.md), whose baseline evidence describes the pre-S0 snapshot.
+S0 added persisted expansion progression, S1 the organisational handoff, S2 one assistive SQL trial, S3 a finite review queue, G1 an Ascension boundary, S4 continuous SQL demand, S5 accelerated routing/explicit Acceleration establishment, S6 two schema exception batches, S7 local Product DB read context/Connected Enterprise, S8 a bounded five-write pilot, S9 recurring human-approved Product DB writebacks, S10 bounded write policy/Good Enough, S11 aggregate batch routing/Lightspeed, S12 source-drift quarantine/Governance-Crisis, S13 an authored root-cause investigation, S14 a governed source-contract repair, S15 an executive review/organisational rollout acknowledgement, and S16 two role endings. Original resource/update rules remain unchanged. The design authority remains [AI_EXPANSION.md](../design/AI_EXPANSION.md), whose baseline evidence describes the pre-S0 snapshot.
 
 | Purpose | Fields and initial values | Meaning / writers |
 | --- | --- | --- |
@@ -392,3 +392,35 @@ Whole-state localStorage autosave persists confirmation, rule authority, histori
 `isExpansionEndingReady` derives readiness from complete S14 evidence plus valid active completed executive review (both flags true); no endingReady field/setter is saved. Workstation displays COMPLETE/rollout ACTIVE/EXPANSION END-STATE READY with ASCENSION DEFERRED. S14's repair result now reports current executive status rather than a permanently stale READY claim. No ending choice/overlay/Access Matrix/expansion New Game+ is implemented.
 
 Organisation-wide rollout never changes autoClasses, category REVIEW, permissions, queues/backlog, human SQL execution, source containment/history or root/remediation proof. All-manual remains valid alongside the automation-first operating model. Existing500/10 batch flow and20-tick SQL demand/cap12/rewards run through all review stages and afterward. G1 continues deferring original OMNISCIENCE; factory reset/default reconstruction remains unchanged.
+
+
+## Expansion role endings / first Access Matrix (S16)
+
+`types.ts::GameState.expansionEnding` / `ExpansionEndingState` defaults to:
+
+```ts
+{ route: null, accessMatrix: { active: false, cells: [], moves: 0, stabilizedOnce: false } }
+```
+
+`isExpansionEndingReady` retains complete S14/S15 authority. Workstation's DECIDE WHAT COMES NEXT is opt-in through `App`/`ExpansionEnding.tsx`; both equally presented routes concern the analyst's role after management's rollout commitment. Choice/confirmation are local unsaved presentation. GOVERN THE MACHINE first shows AUTOMATION WILL CONTINUE; only ACCEPT GOVERNANCE ROLE calls guarded `acceptGovernanceRole('accept_governance')`, committing route govern_machine and active scrambled board/moves0/not stabilized. Govern cannot later switch to NG+ in S16. No ordinary Ascension release occurs.
+
+`constants.ts` defines one row-major4x4 puzzle, `AccessLevel`0/1/2/3 = NONE/READ/WRITE/ADMIN. Fixed intended target (`ACCESS_TARGET`):
+
+| Identity | Source Intake | Product DB | Storefront | Analytics |
+| --- | --- | --- | --- | --- |
+| Analyst | READ | WRITE | READ | READ |
+| Automation Agent | READ | WRITE | READ | NONE |
+| Integration Service | READ | WRITE | WRITE | NONE |
+| Vendor Connector | WRITE | NONE | NONE | NONE |
+
+`ACCESS_DEPENDENCIES=[5,6,7,4,3,0,1,2,13,14,15,12,11,8,9,10]`, indexed0..15 row-major, links each clicked cell to exactly one different cell. `cycleAccessCells` increases those two cells modulo4. `ACCESS_SCRAMBLE=[0,2,4,9,12]`; `initialAccessCells` applies those five operations to the target. Reverse sequence, three clicks each, restores the target; first board is fixed and not solved. Scramble is source/check evidence, absent from player UI.
+
+`cycleAccessMatrixCell` requires ending proof, valid govern/active16cells, not already stabilized, ordinary activity guards, integer index0..15 and safe move increment. It changes only two cells/moves+1, deriving stabilizedOnce when all cells exactly match target. No PU/TU/resources or company permission/policy changes. `getAccessMatrixHealth` derives matching/16*100; equal summed authority is insufficient. Health/mismatch count are not saved.
+
+`AccessMatrix.tsx` shows row/system headers, current/expected levels, health/mismatches/moves and transient CHANGED/PROPAGATED feedback after clicking. Direct buttons support touch without hover. At100%: SYSTEM STABLE — FOR NOW, automation active/access stabilized/governance owner analyst/next review inevitable. Solved cells lock; close/reopen/reload preserves the solved result and Workstation REVIEW ACCESS MATRIX. No timer, new scramble or lifecycle drift follows. Real500/10 company routing, immutable S10 subsets/backlog, human SQL and resolved source history continue. Matrix surfaces do not create additional enterprise connections.
+
+`isExpansionEndingValid` / `hydrateExpansionEnding` validate exact route/default, active/stabilized booleans,16 integer levels0..3 and safe nonnegative moves; stabilization must agree with exact target. Invalid state defaults empty and cannot alter company authority or fabricate a solved flag. `hydrateState` also clears ending without complete S15 proof. Whole-state localStorage save preserves exact unsolved/solved cells without regeneration; local dialogs and last changed feedback are not saved or force-opened. Existing two-second unsaved window remains.
+
+NEW GAME+ first opens local confirmation; GO BACK changes no game state. Only REBOOT calls `rebootExpansionNewGame('reboot')`, requiring complete ending proof, uncommitted route, activity guards and a one-shot transient reset latch. Bonus = max(1,floor((log10(max(1,PU))+TU)/10)); add it to existing prestige level/currency, multiplier=1+0.1*new level. Safe numeric additions are required. After3s reboot, recheck authority, rebuild INITIAL_STATE with increased prestige/entropy30, force-save and reload outside a React updater. Defaults include analyst/null, cleared incident/policy/matrix/resources/upgrades and original TU10. No dead NG+ route is persisted. Prestige capability accelerates processing/eligibility; no mandatory beats are skipped.
+
+Ordinary `ascend`, AscensionOverlay, G1 and factory reset are unchanged. Govern remains committed with no S16 exit; future exit policy is undecided. No recurring matrix events, audit/verifier/sampling/circuit-breaker infrastructure or backend/dependency is implemented.

@@ -6,6 +6,8 @@ import { Workstation } from './components/Workstation';
 import { DashboardPanel } from './components/DashboardPanel';
 import { EventModal } from './components/EventModal';
 import { ProductWritePolicyEditor } from './components/ProductWritePolicyEditor';
+import { ExpansionEnding } from './components/ExpansionEnding';
+import { AccessMatrix } from './components/AccessMatrix';
 import { ExecutiveReview } from './components/ExecutiveReview';
 import { SourceContractRepair } from './components/SourceContractRepair';
 import { IncidentTrace } from './components/IncidentTrace';
@@ -29,7 +31,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, sourceRemediationAvailable, executiveReviewAvailable, expansionEndingReady } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, sourceRemediationAvailable, executiveReviewAvailable, expansionEndingReady, expansionRoleAvailable, accessMatrixAvailable } = useGameEngine();
+  const [roleOpen, setRoleOpen] = useState(false);
+  const [matrixOpen, setMatrixOpen] = useState(false);
+  useEffect(() => { if (!expansionRoleAvailable) setRoleOpen(false); }, [expansionRoleAvailable]);
+  useEffect(() => { if (!accessMatrixAvailable) setMatrixOpen(false); }, [accessMatrixAvailable]);
   const [executiveOpen, setExecutiveOpen] = useState(false);
   useEffect(() => { if (!executiveReviewAvailable) setExecutiveOpen(false); }, [executiveReviewAvailable]);
   const [sourceRepairOpen, setSourceRepairOpen] = useState(false);
@@ -235,6 +241,11 @@ const App: React.FC = () => {
         onContinue={step => {
           if (step === 'source_drift_detected' || step === 'customer_impact_visible') { actions.acknowledgeSourceDrift(step); setPilotOpen(false); }
         }} onLater={() => setPilotOpen(false)} />}
+      {roleOpen && expansionRoleAvailable && <ExpansionEnding
+        onGovern={() => { actions.acceptGovernanceRole('accept_governance'); setRoleOpen(false); setMatrixOpen(true); }}
+        onReboot={() => actions.rebootExpansionNewGame('reboot')} onLater={() => setRoleOpen(false)} />}
+      {matrixOpen && accessMatrixAvailable && <AccessMatrix matrix={state.expansionEnding.accessMatrix}
+        onCycle={actions.cycleAccessMatrixCell} onLater={() => setMatrixOpen(false)} />}
       {executiveOpen && executiveReviewAvailable && state.connectedEnterprise.executiveReview.active && <ExecutiveReview
         enterprise={state.connectedEnterprise} endingReady={expansionEndingReady}
         onPresent={actions.presentExecutiveFindings} onSubmitControls={actions.submitExecutiveControls}
@@ -306,6 +317,10 @@ const App: React.FC = () => {
                 writeQueueUpdate={writeQueueUpdate}
                 writeScaleUpdate={writeScaleUpdate}
                 sourceDriftUpdate={sourceDriftUpdate}
+                expansionRoleAvailable={expansionRoleAvailable}
+                accessMatrixAvailable={accessMatrixAvailable}
+                onDecideRole={() => setRoleOpen(true)}
+                onReviewAccessMatrix={() => setMatrixOpen(true)}
                 executiveReviewAvailable={executiveReviewAvailable}
                 expansionEndingReady={expansionEndingReady}
                 onOpenExecutiveReview={() => { actions.beginExecutiveReview(); setExecutiveOpen(true); }}

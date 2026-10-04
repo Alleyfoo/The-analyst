@@ -200,6 +200,8 @@ New events may include onboarding, departure, contractor extension, temporary-ac
 
 **OPEN QUESTIONS.** Matrix size, permission cycle/click behavior, which dependencies start visible, hints, solvability guarantees, health calculation, event cadence, whether previous tiers continue during maintenance and whether the player can later leave for New Game+.
 
+**LOCKED IMPLEMENTATION SCOPE — S16 (2026-10-04).** The role decision follows derived completed S15/S14 proof; automation already exists for both routes. Govern requires explicit role confirmation and starts one fixed4x4 Access Matrix with NONE/READ/WRITE/ADMIN cycling. Each click cycles itself and exactly one deterministic linked cell. A fixed target plus five scramble operations guarantees solvability by modulo-four inverse clicks; health is exact target placement. First100% stabilization is persistent and remains solved, with company simulation continuing. Recurring lifecycle events are deliberately unimplemented; consider S17 only after evaluating whether the first puzzle is fun. No switch from committed Govern to New Game+ exists in S16; a later governance exit remains OPEN FUTURE DECISION. Exact target/dependencies/scramble are implementation evidence in [STATE_MODEL](../project/STATE_MODEL.md), not professional IAM guidance.
+
 ## 13. New Game+ ending
 
 **LOCKED DESIGN.** The other ending resets the run and grants another Neural Link/prestige benefit. Escape and greater power come with greater acceleration: later runs reach automation and AI sooner, gradually eroding the peaceful early phase. The same organisational problem returns earlier. This is not the “bad” ending.
@@ -209,6 +211,8 @@ New events may include onboarding, departure, contractor extension, temporary-ac
 **BASELINE LIMIT.** Existing prestige accumulates `floor((log10(max(1,pu))+tu)/10)` and production recomputes `1+0.1*level`. `ascend` reconstructs `INITIAL_STATE`, preserves prestige and sets initial entropy to 30 for positive level. It does not carry era memories, hidden knowledge, faster narrative transitions or an initial unread chat. Existing currency has no spending action.
 
 **OPEN QUESTIONS.** Expansion bonus calculation, retained knowledge/policies, save/reset ownership and which transitional beats can be compressed on later runs. Acceleration is required, but mandatory era consequences cannot simply disappear; decide how repeated transitions remain experiential without forcing identical tutorial pacing.
+
+**LOCKED IMPLEMENTATION SCOPE — S16 (2026-10-04).** Expansion New Game+ requires an explicit confirmation at the uncommitted role choice and rebuilds INITIAL_STATE, saving immediately and reloading after the existing reboot presentation. Its prestige/Insight bonus is `max(1, floor((log10(max(1,PU))+TU)/10))`, accumulated into the existing level/currency and multiplier; positive prestige retains initial entropy30. Ordinary Act I Ascension/formula remain separate and unchanged under G1. No prior policy or story completion survives; next run is analyst/null. Existing prestige capability supplies earlier eligibility without skipping mandatory narrative beats. Both choices have equivalent visual weight and no moral ranking.
 
 ## 14. Non-goals
 

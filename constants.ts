@@ -1,4 +1,4 @@
-import { GameState, Upgrade, UpgradeCategory, ResourceType, GameEvent, ChatScenario, IncidentInvestigationStep } from './types';
+import { GameState, Upgrade, UpgradeCategory, ResourceType, GameEvent, ChatScenario, IncidentInvestigationStep, AccessLevel } from './types';
 
 export const TICK_RATE_MS = 200; // 5 ticks per second
 export const HISTORY_LENGTH = 50;
@@ -813,3 +813,21 @@ export const SOURCE_WIDTH_AMENDMENT = {
   acceptedForm: '~<number> cm', nominalWidth: 45, qualifier: 'APPROXIMATE', tolerance: '±2 cm',
   scope: 'Supplier feed · Width field only',
 } as const;
+
+
+// S16 row-major 4x4 authority puzzle; these surfaces are not new enterprise connections.
+export const ACCESS_IDENTITIES = ['ANALYST', 'AUTOMATION AGENT', 'INTEGRATION SERVICE', 'VENDOR CONNECTOR'] as const;
+export const ACCESS_SYSTEMS = ['SOURCE INTAKE', 'PRODUCT DB', 'STOREFRONT', 'ANALYTICS'] as const;
+export const ACCESS_LEVELS = ['NONE', 'READ', 'WRITE', 'ADMIN'] as const;
+export const ACCESS_TARGET: readonly AccessLevel[] = [1,2,1,1, 1,2,1,0, 1,2,2,0, 2,0,0,0];
+// Fixed paired dependencies: exactly one different cell propagates on each click.
+export const ACCESS_DEPENDENCIES = [5,6,7,4,3,0,1,2,13,14,15,12,11,8,9,10] as const;
+export const ACCESS_SCRAMBLE = [0,2,4,9,12] as const;
+export const cycleAccessCells = (cells: readonly AccessLevel[], index: number): AccessLevel[] =>
+  cells.map((level, cell) => cell === index || cell === ACCESS_DEPENDENCIES[index]
+    ? ((level + 1) % 4) as AccessLevel : level);
+// Inverse: apply each fixed scramble click three times (modulo four).
+export const initialAccessCells = (): AccessLevel[] => ACCESS_SCRAMBLE.reduce<AccessLevel[]>(
+  (cells, index) => cycleAccessCells(cells, index), [...ACCESS_TARGET]);
+export const isAccessMatrixSolved = (cells: readonly AccessLevel[]) => cells.length === 16 && cells.every((level, index) => level === ACCESS_TARGET[index]);
+export const getAccessMatrixHealth = (cells: readonly AccessLevel[]) => cells.filter((level, index) => level === ACCESS_TARGET[index]).length / 16 * 100;

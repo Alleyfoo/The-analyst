@@ -54,7 +54,7 @@ export const ExecutiveReview: React.FC<Props> = ({ enterprise, endingReady, onPr
           <p>FULL AUTOMATION ROLLOUT: ACTIVE · EXCEPTIONS: GOVERNED</p>
           {endingReady && <p className="font-bold text-blue-200">EXPANSION END-STATE: READY · ASCENSION DEFERRED</p>}
           <p>The organisation has committed to an automation-first operating model. Existing system-specific authority and exception boundaries remain real.</p>
-          <p>The analyst's role in that organisation remains a later decision.</p>
+          <p>Your role in that organisation is a separate decision. Reopen it from the Workstation when ready.</p>
         </>}
       </div>
       {review.step === 'evidence_packet' ? <button onClick={onPresent} className="w-full py-3 rounded bg-indigo-600 hover:bg-indigo-500 text-white">PRESENT FINDINGS</button> :

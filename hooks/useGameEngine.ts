@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale, SourceDriftIncident, IncidentInvestigation, IncidentInvestigationStep, INCIDENT_INVESTIGATION_STEPS, SourceDriftRemediation, SOURCE_REMEDIATION_STEPS, ExecutiveReviewState, ExecutiveReviewStep, EXECUTIVE_REVIEW_STEPS } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal, PRODUCT_WRITE_BATCH_SIZE, SOURCE_DRIFT, INCIDENT_TRACE_EVIDENCE } from '../constants';
+import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale, SourceDriftIncident, IncidentInvestigation, IncidentInvestigationStep, INCIDENT_INVESTIGATION_STEPS, SourceDriftRemediation, SOURCE_REMEDIATION_STEPS, ExecutiveReviewState, ExecutiveReviewStep, EXECUTIVE_REVIEW_STEPS, ExpansionEndingState } from '../types';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal, PRODUCT_WRITE_BATCH_SIZE, SOURCE_DRIFT, INCIDENT_TRACE_EVIDENCE, initialAccessCells, cycleAccessCells, isAccessMatrixSolved } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -224,6 +224,21 @@ const isExpansionEndingReady = (state: GameState) => hasExecutiveReviewEvidence(
     isExecutiveReviewValid(state.connectedEnterprise.executiveReview) && state.connectedEnterprise.executiveReview.active &&
     state.connectedEnterprise.executiveReview.step === 'review_complete';
 
+const isExpansionEndingValid = (ending: ExpansionEndingState) => {
+    const matrix = ending.accessMatrix;
+    if (!matrix || typeof matrix.active !== 'boolean' || typeof matrix.stabilizedOnce !== 'boolean' ||
+      !Number.isSafeInteger(matrix.moves) || matrix.moves < 0 || !Array.isArray(matrix.cells)) return false;
+    if (ending.route === null) return !matrix.active && !matrix.stabilizedOnce && matrix.moves === 0 && matrix.cells.length === 0;
+    return ending.route === 'govern_machine' && matrix.active && matrix.cells.length === 16 &&
+      matrix.cells.every(level => Number.isInteger(level) && level >= 0 && level <= 3) &&
+      matrix.stabilizedOnce === isAccessMatrixSolved(matrix.cells);
+};
+const hydrateExpansionEnding = (saved: any): ExpansionEndingState => {
+    if (!saved || !isExpansionEndingValid(saved)) return { route: null, accessMatrix: { ...INITIAL_STATE.expansionEnding.accessMatrix, cells: [] } };
+    return { route: saved.route, accessMatrix: { active: saved.accessMatrix.active, cells: [...saved.accessMatrix.cells],
+      moves: saved.accessMatrix.moves, stabilizedOnce: saved.accessMatrix.stabilizedOnce } };
+};
+
 const canReviewIncidentTrace = (state: GameState) => isIncidentInvestigationEligible(state) ||
     (hasConfirmedIncidentRootCause(state) && hasSourceDriftProof(state) && state.connectedEnterprise.sourceDriftRemediation.ruleApproved);
 
@@ -376,6 +391,7 @@ const hydrateState = (parsed: any): GameState => {
     const state: GameState = {
         ...INITIAL_STATE,
         ...parsed,
+        expansionEnding: hydrateExpansionEnding(parsed.expansionEnding),
         connectedEnterprise: {
             executiveReview: hydrateExecutiveReview(parsed.connectedEnterprise?.executiveReview),
             sourceDriftRemediation: hydrateSourceDriftRemediation(parsed.connectedEnterprise?.sourceDriftRemediation),
@@ -460,6 +476,8 @@ const hydrateState = (parsed: any): GameState => {
 
     if (!hasExecutiveReviewEvidence(state)) state.connectedEnterprise.executiveReview = { ...INITIAL_STATE.connectedEnterprise.executiveReview };
 
+    if (!isExpansionEndingReady(state)) state.expansionEnding = hydrateExpansionEnding(null);
+
     // Hydrate Active Events (reattach functions from constants)
     state.activeEvents = (parsed.activeEvents || []).map((savedEv: any) => {
         const original = EVENTS.find(e => e.id === savedEv.id);
@@ -495,6 +513,7 @@ export const useGameEngine = () => {
   
   const [isRebooting, setIsRebooting] = useState(false); // Local UI state for reboot sequence
   const stateRef = useRef(state);
+  const expansionResetPending = useRef(false);
   const sqlPilotAttempt = useRef<number | null>(null);
   const sqlPilotAttemptSequence = useRef(0);
   const [sqlQueueAttemptId, setSQLQueueAttemptId] = useState<number | null>(null);
@@ -1451,6 +1470,52 @@ export const useGameEngine = () => {
   // Witnessing management's decision is distinct from granting strategic approval.
   const acknowledgeExecutiveDecision = () => advanceExecutiveReview('programme_decision');
 
+  const acceptGovernanceRole = (confirmation: string) => {
+    setState(prev => {
+      if (confirmation !== 'accept_governance' || !isExpansionEndingReady(prev) || !canPresentPilotIntroduction(prev) ||
+        !isExpansionEndingValid(prev.expansionEnding) || prev.expansionEnding.route !== null) return prev;
+      return { ...prev, expansionEnding: { route: 'govern_machine',
+        accessMatrix: { active: true, cells: initialAccessCells(), moves: 0, stabilizedOnce: false } } };
+    });
+  };
+  const cycleAccessMatrixCell = (index: number) => {
+    setState(prev => {
+      const ending = prev.expansionEnding;
+      if (!isExpansionEndingReady(prev) || !canPresentPilotIntroduction(prev) || !isExpansionEndingValid(ending) ||
+        ending.route !== 'govern_machine' || ending.accessMatrix.stabilizedOnce || !Number.isInteger(index) || index < 0 || index >= 16 ||
+        !Number.isSafeInteger(ending.accessMatrix.moves + 1)) return prev;
+      const cells = cycleAccessCells(ending.accessMatrix.cells, index);
+      return { ...prev, expansionEnding: { ...ending, accessMatrix: { ...ending.accessMatrix,
+        cells, moves: ending.accessMatrix.moves + 1, stabilizedOnce: isAccessMatrixSolved(cells) } } };
+    });
+  };
+  const rebootExpansionNewGame = (confirmation: string) => {
+    const current = stateRef.current;
+    if (confirmation !== 'reboot' || expansionResetPending.current || !isExpansionEndingReady(current) ||
+      !canPresentPilotIntroduction(current) || !isExpansionEndingValid(current.expansionEnding) || current.expansionEnding.route !== null) return;
+    const bonus = Math.max(1, Math.floor((Math.log10(Math.max(1, current.pu)) + current.tu) / 10));
+    const level = current.prestige.level + bonus;
+    const currency = current.prestige.currency + bonus;
+    if (!Number.isSafeInteger(bonus) || !Number.isSafeInteger(level) || !Number.isSafeInteger(currency)) return;
+    expansionResetPending.current = true;
+    setIsRebooting(true);
+    setTimeout(() => {
+      // Keep this reset separate from the deferred Act I ascend action and its formula.
+      if (!isExpansionEndingReady(stateRef.current) || stateRef.current.expansionEnding.route !== null) {
+        expansionResetPending.current = false; setIsRebooting(false); return;
+      }
+      const timestamp = Date.now();
+      const newState: GameState = { ...INITIAL_STATE,
+        prestige: { level, currency, multiplier: 1 + level * 0.1, timestamp },
+        worldStats: { ...INITIAL_STATE.worldStats, entropy: level > 0 ? 30 : 0 },
+        logs: [{ id: timestamp, text: `SYSTEM REBOOT COMPLETE. NEURAL LINK ESTABLISHED: LEVEL ${level}.`, type: 'system', timestamp }],
+        isAscending: false };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(newState));
+      setState(newState);
+      window.location.reload();
+    }, 3000);
+  };
+
   const manualClean = () => {
     setState(prev => {
       if (prev.blockingTask) return prev; // Blocked
@@ -2008,6 +2073,8 @@ export const useGameEngine = () => {
     productWriteProposal: productWriteAttempt ? (productWriteAttempt.kind === 'queue'
       ? queueWriteProposal(state, productWriteAttempt.index) : productWriteAttempt.kind === 'policy_trial'
         ? getPolicyTrialProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
+    expansionRoleAvailable: isExpansionEndingReady(state) && state.expansionEnding.route === null && canPresentPilotIntroduction(state),
+    accessMatrixAvailable: isExpansionEndingReady(state) && isExpansionEndingValid(state.expansionEnding) && state.expansionEnding.route === 'govern_machine' && canPresentPilotIntroduction(state),
     executiveReviewAvailable: hasExecutiveReviewEvidence(state) && canPresentPilotIntroduction(state),
     expansionEndingReady: isExpansionEndingReady(state),
     sourceRemediationAvailable: isSourceRemediationAvailable(state) && canPresentPilotIntroduction(state),
@@ -2036,7 +2103,7 @@ export const useGameEngine = () => {
       acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
       connectProductDb, acknowledgeConnectedResult,
       grantProductWrite, openProductWriteReview, closeProductWriteReview, applyProductWrite, acknowledgeWriteResult,
-      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale, acknowledgeSourceDrift, beginIncidentInvestigation, inspectIncidentTrace, confirmIncidentRootCause, beginSourceRemediation, requestSupplierClarification, approveSourceWidthRule, reprocessSourceQuarantine, beginExecutiveReview, presentExecutiveFindings, submitExecutiveControls, acknowledgeExecutiveDecision,
+      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale, acknowledgeSourceDrift, beginIncidentInvestigation, inspectIncidentTrace, confirmIncidentRootCause, beginSourceRemediation, requestSupplierClarification, approveSourceWidthRule, reprocessSourceQuarantine, beginExecutiveReview, presentExecutiveFindings, submitExecutiveControls, acknowledgeExecutiveDecision, acceptGovernanceRole, cycleAccessMatrixCell, rebootExpansionNewGame,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

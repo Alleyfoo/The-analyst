@@ -40,6 +40,10 @@ interface Props {
   writeUpdate: { step: 'write_access_offer' | 'write_pilot_success' | null; available: boolean };
   productWriteAvailable: boolean;
   writeQueueUpdate: { step: 'approval_rollout_ready' | 'approval_bottleneck_visible' | null; available: boolean };
+  expansionRoleAvailable: boolean;
+  accessMatrixAvailable: boolean;
+  onDecideRole: () => void;
+  onReviewAccessMatrix: () => void;
   executiveReviewAvailable: boolean;
   expansionEndingReady: boolean;
   onOpenExecutiveReview: () => void;
@@ -88,7 +92,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, onOpenIncidentTrace, sourceRemediationAvailable, onOpenSourceRepair, executiveReviewAvailable, expansionEndingReady, onOpenExecutiveReview }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, onOpenIncidentTrace, sourceRemediationAvailable, onOpenSourceRepair, executiveReviewAvailable, expansionEndingReady, onOpenExecutiveReview, expansionRoleAvailable, accessMatrixAvailable, onDecideRole, onReviewAccessMatrix }) => {
   const writeVelocity = getProductWriteVelocity(state.connectedEnterprise.productWritePolicy.autoClasses.length);
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -241,6 +245,14 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
               {state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' && <p>REPROCESSED: {state.connectedEnterprise.sourceDriftRemediation.resolvedProducts.toLocaleString()} · EXECUTIVE REVIEW: {state.connectedEnterprise.executiveReview.step === 'review_complete' ? 'COMPLETE' : state.connectedEnterprise.executiveReview.active ? 'IN PROGRESS' : 'READY'}</p>}
               {executiveReviewAvailable && <>
                 {expansionEndingReady && <p>FULL AUTOMATION ROLLOUT: ACTIVE · EXCEPTIONS: GOVERNED · EXPANSION END-STATE: READY · ASCENSION DEFERRED</p>}
+                {expansionRoleAvailable && <>
+                  <p>AUTOMATION OPERATING MODEL: ACTIVE · EXECUTIVE REVIEW: COMPLETE · YOUR ROLE: UNDECIDED</p>
+                  <button onClick={onDecideRole} className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 hover:bg-blue-900/30">DECIDE WHAT COMES NEXT</button>
+                </>}
+                {accessMatrixAvailable && <>
+                  <p>GOVERN THE MACHINE · {state.expansionEnding.accessMatrix.stabilizedOnce ? 'SYSTEM STABLE — FOR NOW · ACCESS HEALTH: 100%' : 'ACCESS MODEL: IN PROGRESS'}</p>
+                  <button onClick={onReviewAccessMatrix} className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 hover:bg-blue-900/30">REVIEW ACCESS MATRIX</button>
+                </>}
                 <button onClick={onOpenExecutiveReview} className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 hover:bg-blue-900/30">
                   {state.connectedEnterprise.executiveReview.step === 'review_complete' ? 'REVIEW EXECUTIVE RESULT' : state.connectedEnterprise.executiveReview.active ? 'CONTINUE EXECUTIVE REVIEW' : 'OPEN EXECUTIVE REVIEW'}
                 </button>

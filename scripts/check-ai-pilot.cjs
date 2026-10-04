@@ -1,4 +1,4 @@
-// Focused S0-S15/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
+// Focused S0-S16/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
 // Browser smoke separately verifies actual rendering and persistence.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -82,6 +82,10 @@ function mount(seed = null, original = false) {
     acceleration: () => api.accelerationUpdate,
     schemaUpdate: () => api.schemaUpdate,
     connectedUpdate: () => api.connectedUpdate,
+    roleAvailable: () => api.expansionRoleAvailable,
+    matrixAvailable: () => api.accessMatrixAvailable,
+    accessRules: () => {const c=load('constants.ts');return JSON.parse(JSON.stringify({target:c.ACCESS_TARGET,dependencies:c.ACCESS_DEPENDENCIES,scramble:c.ACCESS_SCRAMBLE,start:c.initialAccessCells()}));},
+    health: cells => load('constants.ts').getAccessMatrixHealth(cells),
     executiveAvailable: () => api.executiveReviewAvailable,
     endingReady: () => api.expansionEndingReady,
     repairAvailable: () => api.sourceRemediationAvailable,
@@ -118,8 +122,8 @@ const progress = step => ({ era: step === 'automation_recognized' ? 'analyst' : 
 function compareTicks(seed) {
   const oldGame = mount(seed, true), newGame = mount(seed);
   for (let tick = 0; tick <= 20; tick++) {
-    const actual = newGame.state(); delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise;
-    const expected = oldGame.state(); delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
+    const actual = newGame.state(); delete actual.expansionEnding; delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise;
+    const expected = oldGame.state(); delete expected.expansionEnding; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
     assert.deepEqual(actual, expected, 'baseline state at tick ' + tick);
     if (tick < 20) { oldGame.tick(); newGame.tick(); }
   }
@@ -157,7 +161,7 @@ game.action('advancePilotIntroduction', 'pilot_announced');
 game.action('establishExpansionEra', 'ai_pilot');
 game.action('advancePilotIntroduction', 'pilot_ready');
 assert.deepEqual(game.state().expansionProgress, progress('pilot_ready'));
-const after = game.state(); delete before.expansionProgress; delete before.aiReviewQueue; delete before.aiReviewDemand; delete before.schemaBatchReview; delete before.connectedEnterprise; delete after.expansionProgress; delete after.aiReviewQueue; delete after.aiReviewDemand; delete after.schemaBatchReview; delete after.connectedEnterprise;
+const after = game.state(); delete before.expansionEnding; delete before.expansionProgress; delete before.aiReviewQueue; delete before.aiReviewDemand; delete before.schemaBatchReview; delete before.connectedEnterprise; delete after.expansionEnding; delete after.expansionProgress; delete after.aiReviewQueue; delete after.aiReviewDemand; delete after.schemaBatchReview; delete after.connectedEnterprise;
 assert.deepEqual(after, before, 'acknowledgements change only progression');
 for (const blocker of ['spaghettiMode', 'pandasMode', 'sqlMode', 'modelMode', 'miningMode', 'flowMode', 'buzzwordMode', 'pdfMode', 'isAscending']) {
   const blocked = mount({ ...eligibleSeed, [blocker]: true });
@@ -194,13 +198,13 @@ for (const level of [0, 3]) for (const meeting of [false, true]) {
   manual.action('completeSQLQuery', 100, 250);
   originalSQL.action('completeSQLQuery', 100, 250);
   const currentManual = manual.state(), baselineManual = originalSQL.state();
-  delete currentManual.expansionProgress; delete currentManual.aiReviewQueue; delete currentManual.aiReviewDemand; delete currentManual.schemaBatchReview; delete currentManual.connectedEnterprise; delete baselineManual.expansionProgress; delete baselineManual.aiReviewQueue; delete baselineManual.aiReviewDemand; delete baselineManual.schemaBatchReview; delete baselineManual.connectedEnterprise;
+  delete currentManual.expansionEnding; delete currentManual.expansionProgress; delete currentManual.aiReviewQueue; delete currentManual.aiReviewDemand; delete currentManual.schemaBatchReview; delete currentManual.connectedEnterprise; delete baselineManual.expansionEnding; delete baselineManual.expansionProgress; delete baselineManual.aiReviewQueue; delete baselineManual.aiReviewDemand; delete baselineManual.schemaBatchReview; delete baselineManual.connectedEnterprise;
   assert.deepEqual(currentManual, baselineManual, 'ordinary SQL reward matches original source baseline');
   assert.deepEqual(manual.state().expansionProgress, progress('pilot_ready'), 'manual cannot advance pilot');
   assisted.action('completeSQLPilotQuery', attempt);
   assert.deepEqual(assisted.state().expansionProgress, progress('pilot_success'));
   const actual = assisted.state(), expected = manual.state();
-  delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
+  delete actual.expansionEnding; delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise; delete expected.expansionEnding; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
   assert.deepEqual(actual, expected, 'manual/assisted rewards and meeting contributions are identical');
   assert.equal(actual.cleanData - initial.cleanData, 100 * (1 + level * 0.1));
   assert.equal(actual.pu - initial.pu, 250 * (1 + level * 0.1));
@@ -229,7 +233,7 @@ for (const interaction of ['blocking task', 'OMNISCIENCE']) {
   assisted.action('completeSQLPilotQuery', attempt);
   assert.deepEqual(assisted.state().expansionProgress, progress('pilot_success'));
   const actual = assisted.state(), expected = manual.state();
-  delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
+  delete actual.expansionEnding; delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise; delete expected.expansionEnding; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
   assert.deepEqual(actual, expected, 'already-executed completion follows original reward behavior during ' + interaction);
   assert.equal(assisted.presentation().available, false, 'feedback deferred during ' + interaction);
   if (interaction === 'OMNISCIENCE') {
@@ -253,7 +257,7 @@ const feedback = mount({ ...eligibleSeed, expansionProgress: progress('pilot_suc
 const feedbackBefore = feedback.state();
 feedback.action('advancePilotIntroduction', 'pilot_success');
 assert.deepEqual(feedback.state().expansionProgress, progress('demand_pending'));
-const feedbackAfter = feedback.state(); delete feedbackBefore.expansionProgress; delete feedbackBefore.aiReviewQueue; delete feedbackBefore.aiReviewDemand; delete feedbackBefore.schemaBatchReview; delete feedbackBefore.connectedEnterprise; delete feedbackAfter.expansionProgress; delete feedbackAfter.aiReviewQueue; delete feedbackAfter.aiReviewDemand; delete feedbackAfter.schemaBatchReview; delete feedbackAfter.connectedEnterprise;
+const feedbackAfter = feedback.state(); delete feedbackBefore.expansionEnding; delete feedbackBefore.expansionProgress; delete feedbackBefore.aiReviewQueue; delete feedbackBefore.aiReviewDemand; delete feedbackBefore.schemaBatchReview; delete feedbackBefore.connectedEnterprise; delete feedbackAfter.expansionEnding; delete feedbackAfter.expansionProgress; delete feedbackAfter.aiReviewQueue; delete feedbackAfter.aiReviewDemand; delete feedbackAfter.schemaBatchReview; delete feedbackAfter.connectedEnterprise;
 assert.deepEqual(feedbackAfter, feedbackBefore, 'management response adds no demand/rewards');
 assert.deepEqual(mount(feedback.save()).state().expansionProgress, progress('demand_pending'));
 compareTicks({ ...eligibleSeed, expansionProgress: progress('demand_pending') });
@@ -362,11 +366,11 @@ for (const tu of [99, 100, 135]) {
   const current = mount(seed), original = mount(seed, true);
   assert.equal(current.deferred(), false);
   for (const game of [current, original]) game.purchase('project_omniscience');
-  const actual = current.state(), expected = original.state(); delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
+  const actual = current.state(), expected = original.state(); delete actual.expansionEnding; delete expected.expansionEnding; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
   assert.deepEqual(actual, expected, 'baseline purchase/cost/flag/log matches original at TU ' + tu);
   if (tu < 100) continue;
   for (const game of [current, original]) { game.action('ascend'); assert.equal(game.rebooting(), true); game.timeout(3000); }
-  const currentNG = current.saved(), originalNG = original.saved(); delete currentNG.expansionProgress; delete currentNG.aiReviewQueue; delete currentNG.aiReviewDemand; delete currentNG.schemaBatchReview; delete currentNG.connectedEnterprise; delete originalNG.expansionProgress; delete originalNG.aiReviewQueue; delete originalNG.aiReviewDemand; delete originalNG.schemaBatchReview; delete originalNG.connectedEnterprise;
+  const currentNG = current.saved(), originalNG = original.saved(); delete currentNG.expansionEnding; delete currentNG.expansionProgress; delete currentNG.aiReviewQueue; delete currentNG.aiReviewDemand; delete currentNG.schemaBatchReview; delete currentNG.connectedEnterprise; delete originalNG.expansionEnding; delete originalNG.expansionProgress; delete originalNG.aiReviewQueue; delete originalNG.aiReviewDemand; delete originalNG.schemaBatchReview; delete originalNG.connectedEnterprise;
   assert.deepEqual(currentNG, originalNG, 'baseline NG+ reset and prestige match original');
   assert.equal(current.reloads(), original.reloads());
 }
@@ -1027,6 +1031,32 @@ for(const seed of [repairSeed,containedSave,{...executiveSeed,expansionProgress:
 for(const block of blockers)for(let i=0;i<4;i++){
  const stages=['evidence_packet','evidence_packet','controls_review','programme_decision'],g=mount({...executiveSeed,...block,connectedEnterprise:{...executiveSeed.connectedEnterprise,executiveReview:{active:i>0,step:stages[i],controlsAccepted:i===3,fullAutomationRolloutStarted:false}}}),before=g.state();g.action(reviewActions[i]);assert.deepEqual(g.state(),before);
 }
+// S16: role ownership after organisational commitment; fixed solvable puzzle and separate reset.
+const emptyEnding={route:null,accessMatrix:{active:false,cells:[],moves:0,stabilizedOnce:false}};
+const endingState=g=>g.state().expansionEnding;
+const s16Seed={...completedSave,connectedEnterprise:{...completedSave.connectedEnterprise,executiveReview:completeExecutive}};
+const rules=mount(s16Seed).accessRules();assert.equal(rules.target.length,16);assert.equal(rules.dependencies.length,16);assert(rules.dependencies.every((j,i)=>Number.isInteger(j)&&j>=0&&j<16&&j!==i));assert.deepEqual(rules.scramble,[0,2,4,9,12]);assert.notDeepEqual(rules.start,rules.target);assert.equal(mount().health(rules.target),100);const swapped=[...rules.target];[swapped[0],swapped[1]]=[swapped[1],swapped[0]];assert.equal(swapped.reduce((a,b)=>a+b,0),rules.target.reduce((a,b)=>a+b,0));assert(mount().health(swapped)<100);
+assert.deepEqual(endingState(mount()),emptyEnding);
+for(const seed of [repairSeed,completedSave,containedSave]){const g=mount(seed),before=g.state();assert.equal(g.roleAvailable(),false);g.action('acceptGovernanceRole','accept_governance');g.action('cycleAccessMatrixCell',0);g.action('rebootExpansionNewGame','reboot');assert.deepEqual(g.state(),before);assert.equal(g.rebooting(),false);}
+for(let mask=0;mask<16;mask++){
+ const selected=classes.filter((_,i)=>mask&(1<<i)),source=mount(provenSeed(selected));for(const name of ['beginSourceRemediation','requestSupplierClarification','approveSourceWidthRule','reprocessSourceQuarantine',...reviewActions])source.action(name);const g=mount(source.save());assert(g.roleAvailable());const before=g.state();g.action('acceptGovernanceRole');g.action('acceptGovernanceRole','wrong');g.action('rebootExpansionNewGame');assert.deepEqual(g.state(),before);g.action('acceptGovernanceRole','accept_governance');assert.deepEqual(endingState(g),{route:'govern_machine',accessMatrix:{active:true,cells:rules.start,moves:0,stabilizedOnce:false}});assert.deepEqual({...g.state(),expansionEnding:emptyEnding},before);assert(g.matrixAvailable());assert.equal(g.roleAvailable(),false);
+ const unchanged=g.state();g.action('acceptGovernanceRole','accept_governance');g.action('rebootExpansionNewGame','reboot');for(const bad of [-1,16,1.5,'0',null,NaN])g.action('cycleAccessMatrixCell',bad);assert.deepEqual(g.state(),unchanged);assert.equal(g.rebooting(),false);
+ // One probe, verify exactly two cells and cycle; three more clicks reverse it.
+ const probe=1,pre=g.state();g.action('cycleAccessMatrixCell',probe);const changed=endingState(g).accessMatrix;assert.equal(changed.moves,1);assert.deepEqual(changed.cells.map((n,i)=>n!==pre.expansionEnding.accessMatrix.cells[i]?i:-1).filter(i=>i>=0),[probe,rules.dependencies[probe]].sort((a,b)=>a-b));for(const i of [probe,rules.dependencies[probe]])assert.equal(changed.cells[i],(pre.expansionEnding.accessMatrix.cells[i]+1)%4);assert.deepEqual({...g.state(),expansionEnding:pre.expansionEnding},pre);const saved=g.save(),resumed=mount(saved);assert.deepEqual(endingState(resumed),endingState(g));assert.deepEqual(resumed.state(),saved);
+ for(let i=0;i<3;i++)g.action('cycleAccessMatrixCell',probe);assert.deepEqual(endingState(g).accessMatrix.cells,rules.start);
+ for(const index of [...rules.scramble].reverse())for(let i=0;i<3;i++)g.action('cycleAccessMatrixCell',index);
+ assert.deepEqual(endingState(g).accessMatrix.cells,rules.target);assert.equal(endingState(g).accessMatrix.stabilizedOnce,true);assert.equal(g.health(endingState(g).accessMatrix.cells),100);assert.equal(endingState(g).accessMatrix.moves,19);const solved=g.state();g.action('cycleAccessMatrixCell',0);assert.deepEqual(g.state(),solved);const loaded=mount(g.save());assert.deepEqual(endingState(loaded),endingState(g));ticks(loaded,20);assert.deepEqual(endingState(loaded),endingState(g));assert.equal(scale(loaded).totalRouted,scale(g).totalRouted+1000);assert.deepEqual(policy(loaded).autoClasses,selected);assert.deepEqual(incident(loaded),incident(g));assert.equal(loaded.state().connectedEnterprise.productDb.access,'read_write');assert.deepEqual(economics(solved),economics(before));invariant(loaded);const preSQL=loaded.state();review(loaded);assert.equal(loaded.state().cleanData,preSQL.cleanData+100);assert.equal(loaded.state().pu,preSQL.pu+250);approve(loaded);invariant(loaded);const gate=loaded.state();loaded.purchase('project_omniscience');loaded.action('ascend');loaded.action('rebootExpansionNewGame','reboot');assert.deepEqual(loaded.state(),gate);assert.equal(loaded.rebooting(),false);
+}
+for(const bad of [null,{}, {route:'new_game_plus',accessMatrix:{active:true,cells:rules.target,moves:5,stabilizedOnce:true}}, {route:'govern_machine',accessMatrix:{active:true,cells:rules.start.slice(1),moves:0,stabilizedOnce:false}}, {route:'govern_machine',accessMatrix:{active:true,cells:rules.target.map((n,i)=>i===0?'1':n),moves:5,stabilizedOnce:true}}, ...[-1,1.5,Number.MAX_SAFE_INTEGER+1].map(moves=>({route:'govern_machine',accessMatrix:{active:true,cells:rules.start,moves,stabilizedOnce:false}})), {route:'govern_machine',accessMatrix:{active:true,cells:rules.start,moves:5,stabilizedOnce:true}}, {route:'govern_machine',accessMatrix:{active:'true',cells:rules.target,moves:5,stabilizedOnce:true}}]){
+ const g=mount({...s16Seed,expansionEnding:bad});assert.deepEqual(endingState(g),emptyEnding);assert.equal(g.matrixAvailable(),false);assert.deepEqual(g.state().connectedEnterprise.productDb,s16Seed.connectedEnterprise.productDb);
+}
+const noEndingProof=mount({...completedSave,expansionEnding:{route:'govern_machine',accessMatrix:{active:true,cells:rules.target,moves:15,stabilizedOnce:true}}});assert.deepEqual(endingState(noEndingProof),emptyEnding);
+const overflowMatrix=mount({...s16Seed,expansionEnding:{route:'govern_machine',accessMatrix:{active:true,cells:rules.start,moves:Number.MAX_SAFE_INTEGER,stabilizedOnce:false}}}),matrixOverflowBefore=overflowMatrix.state();overflowMatrix.action('cycleAccessMatrixCell',0);assert.deepEqual(overflowMatrix.state(),matrixOverflowBefore);
+for(const block of blockers){const g=mount({...s16Seed,...block}),before=g.state();g.action('acceptGovernanceRole','accept_governance');g.action('rebootExpansionNewGame','reboot');assert.deepEqual(g.state(),before);assert.equal(g.rebooting(),false);}
+for(const [pu,tu,level,currency] of [[0,0,0,0],[100,100,3,7],[1e10,20,2,5]]){
+ const g=mount({...s16Seed,pu,tu,prestige:{level,currency,multiplier:1+level*.1,timestamp:0}}),before=g.state(),bonus=Math.max(1,Math.floor((Math.log10(Math.max(1,pu))+tu)/10));g.action('rebootExpansionNewGame','wrong');assert.deepEqual(g.state(),before);assert.equal(g.rebooting(),false);g.action('rebootExpansionNewGame','reboot');assert.equal(g.rebooting(),true);assert.deepEqual(g.state(),before);g.action('rebootExpansionNewGame','reboot');g.timeout(3000);assert.equal(g.reloads(),1);const reset=g.saved();assert.equal(reset.prestige.level,level+bonus);assert.equal(reset.prestige.currency,currency+bonus);assert.equal(reset.prestige.multiplier,1+(level+bonus)*.1);assert.equal(reset.worldStats.entropy,30);assert.deepEqual(reset.expansionProgress,{era:'analyst',transition:null});assert.deepEqual(reset.expansionEnding,emptyEnding);assert.deepEqual(reset.connectedEnterprise,mount().state().connectedEnterprise);assert.deepEqual(reset.upgrades,{});assert.equal(reset.rawData,100);assert.equal(reset.cleanData,0);assert.equal(reset.pu,0);assert.equal(reset.tu,10);assert.equal(reset.tick,0);assert.equal(reset.isAscending,false);const restarted=mount(reset);assert.deepEqual(restarted.state().expansionProgress,{era:'analyst',transition:null});assert.equal(restarted.endingReady(),false);
+}
+console.log('PASS S16: derived ending proof/explicit confirmations, all16 unchanged policies/authority, fixed4x4 two-cell modulo4 propagation/inverse scramble/exact placement health, once-only zero-reward stabilization/no recurring drift, strict board hydration/reload, live500/10 and humanSQL/G1, separate confirmed NG+ min1 formula/INITIAL_STATE immediate save+reload, unchanged original Ascension/factory reset.');
 console.log('PASS S15: exact S14 evidence/authority entry, four explicit stages/all16 immutable policies, no player strategy approval, zero reward, derived proof-only readiness/G1, strict hydration/stage reload/no auto rollout, retained source history, live500/10 flow/manual review and unchanged human SQL.');
 console.log('PASS S14: all16 policies/root-proof entry, explicit supplier nominal/approximate±2cm evidence, rule-only containment preserving history/current work, bounded once-only zero-reward backfill/writeUses without routine counter changes, preserved causal/customer history, safe repair hydration/reload/no-offline/overflow, live500/10 routine+SQL and unchanged AUTO classes/G1.');
 console.log('PASS S13: exact Governance/S12 evidence, all16 policies, authored ordered stages/three deterministic alternatives, wrong/stale/skip guards, rule-only once proof/no rewards/permission changes, stage-by-stage reload/default hydration, live500/10 routing/+5quarantine and SQL before/after proof, S12/S11 invariants and G1/reset.');
