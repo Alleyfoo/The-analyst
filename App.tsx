@@ -26,7 +26,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt, productWriteProposal, writeQueueUpdate, productWriteQueueAvailable, writePolicyUpdate, policyTrialAvailable, writeScaleUpdate } = useGameEngine();
   const [pilotOpen, setPilotOpen] = useState(false);
   useEffect(() => {
     if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready' || pilotIntroduction.step === 'rollout_review') setPilotOpen(false);
@@ -216,7 +216,13 @@ const App: React.FC = () => {
       {pilotOpen && writePolicyUpdate.available && writePolicyUpdate.step === 'policy_trial_success' && <AIPilotIntroduction
         step="policy_trial_success" policyTrial={state.connectedEnterprise.productWritePolicy.trial}
         onContinue={() => { actions.acknowledgeProductWritePolicy(); setPilotOpen(false); }} onLater={() => setPilotOpen(false)} />}
+      {pilotOpen && writeScaleUpdate.step && writeScaleUpdate.available && <AIPilotIntroduction
+        step={writeScaleUpdate.step} writeScale={state.connectedEnterprise.productWriteScale}
+        onContinue={step => {
+          if (step === 'batch_routing_offer' || step === 'batch_scale_visible') { actions.acknowledgeProductWriteScale(step); setPilotOpen(false); }
+        }} onLater={() => setPilotOpen(false)} />}
       {productWriteAttempt && productWriteProposal && <ProductWriteReview attempt={productWriteAttempt} proposal={productWriteProposal}
+        reviewBacklog={state.connectedEnterprise.productWriteScale.active && productWriteAttempt.kind === 'queue' ? state.connectedEnterprise.productWriteScale.reviewBacklog : undefined}
         queueMode={productWriteAttempt.kind === 'queue'} trialMode={productWriteAttempt.kind === 'policy_trial'}
         pending={productWriteAttempt.kind === 'policy_trial' ? state.connectedEnterprise.productWritePolicy.trial.manualPending : productWriteAttempt.kind === 'queue' ? state.connectedEnterprise.productWriteQueue.pending : state.connectedEnterprise.productWritePilot.pending} sqlPending={state.aiReviewQueue.pending}
         onApply={actions.applyProductWrite} onLater={actions.closeProductWriteReview} />}
@@ -272,6 +278,7 @@ const App: React.FC = () => {
                 schemaBatchAvailable={schemaBatchAvailable}
                 onReviewSchemaBatch={actions.openSchemaBatchReview}
                 writeQueueUpdate={writeQueueUpdate}
+                writeScaleUpdate={writeScaleUpdate}
                 writePolicyUpdate={writePolicyUpdate}
                 policyTrialAvailable={policyTrialAvailable}
                 onReviewPolicyTrial={actions.openPolicyTrialWrite}

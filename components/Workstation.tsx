@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GameState, Upgrade, ResourceType, UpgradeCategory, LogMessage, CampaignType, AIPilotStep } from '../types';
-import { UPGRADES, checkUpgradeVisibility, isAscensionDeferred, TICK_RATE_MS } from '../constants';
+import { UPGRADES, checkUpgradeVisibility, isAscensionDeferred, TICK_RATE_MS, getProductWriteVelocity, PRODUCT_WRITE_QUEUE_CAP } from '../constants';
 import { Filter, Activity, Lock, Cpu, Terminal as TerminalIcon, Users, Scale, FlaskConical, Briefcase, Server, Wand2, FileCode, Database, Brain, GitGraph, TrendingUp, DollarSign, Megaphone, Send, Smartphone, Tv, Zap, Infinity as InfinityIcon, Sparkles, FileText, Scan, Coffee, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -40,6 +40,7 @@ interface Props {
   writeUpdate: { step: 'write_access_offer' | 'write_pilot_success' | null; available: boolean };
   productWriteAvailable: boolean;
   writeQueueUpdate: { step: 'approval_rollout_ready' | 'approval_bottleneck_visible' | null; available: boolean };
+  writeScaleUpdate: { step: 'batch_routing_offer' | 'batch_scale_visible' | null; available: boolean };
   writePolicyUpdate: { step: 'approval_policy_offer' | 'policy_trial_success' | null; available: boolean };
   policyTrialAvailable: boolean;
   onReviewPolicyTrial: () => void;
@@ -79,7 +80,8 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate }) => {
+  const writeVelocity = getProductWriteVelocity(state.connectedEnterprise.productWritePolicy.autoClasses.length);
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -198,8 +200,8 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
         </button>
         {!accelerationUpdate.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
       </div>}
-      {(state.expansionProgress.era === 'acceleration' || state.expansionProgress.era === 'connected_enterprise' || state.expansionProgress.era === 'good_enough') &&
-       (state.expansionProgress.transition === null || state.expansionProgress.transition.targetEra === 'connected_enterprise' ||
+      {(state.expansionProgress.era === 'acceleration' || state.expansionProgress.era === 'connected_enterprise' || state.expansionProgress.era === 'good_enough' || state.expansionProgress.era === 'lightspeed') &&
+       (state.expansionProgress.transition === null || state.expansionProgress.transition.targetEra === 'connected_enterprise' || state.expansionProgress.transition.targetEra === 'lightspeed' ||
         (state.expansionProgress.era === 'connected_enterprise' && state.expansionProgress.transition.targetEra === 'good_enough')) && state.upgrades['pandas_scripts'] === true && (
         <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
           {schemaUpdate.step ? <>
@@ -219,6 +221,10 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
       )}
       {(connectedUpdate.step || state.connectedEnterprise.productDb.connected) && <div className="shrink-0 border-b border-blue-800/50 bg-blue-950/30 p-3 text-xs text-slate-300">
         {state.connectedEnterprise.productDb.connected && <p className="font-bold text-blue-200">CONNECTED SYSTEMS · Product DB · {state.connectedEnterprise.productDb.access === 'read_write' ? (state.connectedEnterprise.productWritePolicy.configured ? 'READ + WRITE · BOUNDED APPROVAL POLICY' : 'READ + WRITE · HUMAN APPROVAL REQUIRED') : 'READ ONLY'}</p>}
+        {writeScaleUpdate.step && <button onClick={onReviewPilot} disabled={!writeScaleUpdate.available}
+          className="mt-2 w-full py-2 border border-indigo-500 rounded text-indigo-200 disabled:opacity-40 hover:bg-indigo-900/30">
+          {writeScaleUpdate.step === 'batch_routing_offer' ? 'Review batch routing' : 'Review operating scale'}
+        </button>}
         {writePolicyUpdate.step && <button onClick={onReviewPilot} disabled={!writePolicyUpdate.available}
           className="mt-2 w-full py-2 border border-indigo-500 rounded text-indigo-200 disabled:opacity-40 hover:bg-indigo-900/30">
           {writePolicyUpdate.step === 'approval_policy_offer' ? 'Review approval policy' : 'Review policy trial result'}
@@ -239,10 +245,19 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
           {writeQueueUpdate.step === 'approval_rollout_ready' ? 'Review standard writeback' : 'Review approval capacity'}
         </button>}
         {state.connectedEnterprise.productWriteQueue.active && <div className="mt-2 space-y-1">
-          <p className="font-bold text-blue-200">PRODUCT DB WRITE APPROVALS</p>
-          <p>{state.connectedEnterprise.productWriteQueue.pending} pending · {state.connectedEnterprise.productWriteQueue.completed} approved</p>
+          {state.connectedEnterprise.productWriteScale.active ? <>
+            <p className="font-bold text-blue-200">PRODUCT DB WRITE FLOW</p>
+            <p>OPERATIONAL VELOCITY: {writeVelocity.total} write intents / sec</p>
+            <p>AUTO APPLY RATE: {writeVelocity.auto} / sec · HUMAN REVIEW ROUTING: {writeVelocity.review} / sec</p>
+            <p>REVIEW WINDOW: {state.connectedEnterprise.productWriteQueue.pending} / {PRODUCT_WRITE_QUEUE_CAP}</p>
+            <p>AGGREGATE BACKLOG: {state.connectedEnterprise.productWriteScale.reviewBacklog.toLocaleString()}</p>
+            <p>BATCHES PROCESSED: {state.connectedEnterprise.productWriteScale.batchesProcessed.toLocaleString()} · TOTAL ROUTED: {state.connectedEnterprise.productWriteScale.totalRouted.toLocaleString()}</p>
+          </> : <>
+            <p className="font-bold text-blue-200">PRODUCT DB WRITE APPROVALS</p>
+            <p>{state.connectedEnterprise.productWriteQueue.pending} pending · {state.connectedEnterprise.productWriteQueue.completed} approved</p>
+          </>}
           <p>{state.connectedEnterprise.productWritePolicy.active ? "ROUTING: ACTIVE · POLICY FOR NEW WRITES · PENDING ITEMS REQUIRE HUMAN APPROVAL" : "ROUTING: ACTIVE · VALIDATED WRITES · HUMAN APPROVAL: REQUIRED"}</p>
-          <p>Next write: ~{Math.ceil(Math.max(0, state.connectedEnterprise.productWriteQueue.nextArrivalTick - state.tick) * TICK_RATE_MS / 1000)}s</p>
+          <p>{state.connectedEnterprise.productWriteScale.active ? "Next 500-intent batch" : "Next write"}: ~{Math.ceil(Math.max(0, state.connectedEnterprise.productWriteQueue.nextArrivalTick - state.tick) * TICK_RATE_MS / 1000)}s</p>
           <button onClick={onReviewNextWrite} disabled={!productWriteQueueAvailable}
             className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 disabled:opacity-40 hover:bg-blue-900/30">REVIEW NEXT WRITE</button>
         </div>}

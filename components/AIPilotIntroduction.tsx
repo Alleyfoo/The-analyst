@@ -3,15 +3,18 @@ import { CheckCircle, Sparkles } from 'lucide-react';
 import { AIPilotStep, AIPilotFeedbackStep } from '../types';
 
 interface Props {
-  step: AIPilotFeedbackStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible' | 'policy_trial_success';
-  onContinue: (step: AIPilotStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible' | 'policy_trial_success') => void;
+  step: AIPilotFeedbackStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible' | 'policy_trial_success' | 'batch_routing_offer' | 'batch_scale_visible';
+  onContinue: (step: AIPilotStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success' | 'approval_rollout_ready' | 'approval_bottleneck_visible' | 'policy_trial_success' | 'batch_routing_offer' | 'batch_scale_visible') => void;
   onLater: () => void;
   writePending?: number;
+  writeScale?: { totalRouted: number; autoApplied: number; reviewRouted: number; reviewBacklog: number };
   policyTrial?: { autoApplied: number; manualApproved: number };
 }
 
 // Presentation only: the engine owns eligibility, sequence and acknowledgement.
-export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater, writePending, policyTrial }) => {
+export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater, writePending, policyTrial, writeScale }) => {
+  const batchOffer = step === 'batch_routing_offer';
+  const batchResult = step === 'batch_scale_visible';
   const recognition = step === 'automation_recognized';
   const result = step === 'pilot_success';
   const expansion = step === 'demand_pending';
@@ -36,13 +39,26 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           {recognition ? <CheckCircle className="text-emerald-400" size={32} /> : <Sparkles className="text-blue-400" size={32} />}
           <div>
             <h2 id="pilot-introduction-title" className="text-xl font-bold text-slate-100">
-              {policyResult ? 'POLICY TRIAL COMPLETE' : recognition ? 'AUTOMATION RECOGNIZED' : result ? 'PILOT RESULT' : expansion ? 'PILOT EXPANSION' : cleared ? 'INITIAL PILOT QUEUE CLEARED' : operational ? 'OPERATIONAL ROLLOUT' : turnaround ? 'TURNAROUND TARGET' : capacity ? 'REVIEW CAPACITY' : schema ? 'SCHEMA MAPPING PILOT' : schemaResult ? 'BATCH COMPLETE' : connection ? 'SOURCE CONTEXT' : connectedResult ? 'CONNECTED REVIEW RESULT' : writeOffer ? 'WRITEBACK' : writeResult ? 'WRITE PILOT RESULT' : writeRollout ? 'STANDARD WRITEBACK' : writePressure ? 'APPROVAL CAPACITY' : 'ENTERPRISE AI PILOT'}
+              {batchOffer ? 'BATCH ROUTING' : batchResult ? 'OPERATING AT SCALE' : policyResult ? 'POLICY TRIAL COMPLETE' : recognition ? 'AUTOMATION RECOGNIZED' : result ? 'PILOT RESULT' : expansion ? 'PILOT EXPANSION' : cleared ? 'INITIAL PILOT QUEUE CLEARED' : operational ? 'OPERATIONAL ROLLOUT' : turnaround ? 'TURNAROUND TARGET' : capacity ? 'REVIEW CAPACITY' : schema ? 'SCHEMA MAPPING PILOT' : schemaResult ? 'BATCH COMPLETE' : connection ? 'SOURCE CONTEXT' : connectedResult ? 'CONNECTED REVIEW RESULT' : writeOffer ? 'WRITEBACK' : writeResult ? 'WRITE PILOT RESULT' : writeRollout ? 'STANDARD WRITEBACK' : writePressure ? 'APPROVAL CAPACITY' : 'ENTERPRISE AI PILOT'}
             </h2>
             <p className="text-xs font-mono uppercase text-slate-500 tracking-wider">Management update</p>
           </div>
         </div>
         <div className="bg-slate-950/50 p-4 rounded border border-slate-800 mb-6 text-sm text-slate-300 leading-relaxed space-y-3">
-          {policyResult ? <>
+          {batchOffer ? <>
+            <p>The approval policy is working as designed. Operations no longer needs to treat every validated Product DB correction as a separate routing event.</p>
+            <p>“We'll preserve the same policy. We'll just submit routine write traffic in batches.”</p>
+            <p>500 validated intents every two seconds. Your policy and READ_WRITE authority stay unchanged; category corrections remain review-required.</p>
+            <p>The review window holds 37 actionable writes. Additional review work will wait in an aggregate backlog.</p>
+          </> : batchResult ? <>
+            <p>{writeScale?.totalRouted.toLocaleString()} validated Product DB write intents have now passed through the batch routing service.</p>
+            <p>TOTAL ROUTED: {writeScale?.totalRouted.toLocaleString()}</p>
+            <p>AUTO APPLIED: {writeScale?.autoApplied.toLocaleString()}</p>
+            <p>ROUTED TO REVIEW: {writeScale?.reviewRouted.toLocaleString()}</p>
+            <p>CURRENT REVIEW BACKLOG: {writeScale?.reviewBacklog.toLocaleString()}</p>
+            <p>“The workflow is no longer operating at individual-task scale.”</p>
+            <p>Acknowledgement establishes Lightspeed. The same policy and ongoing batch service remain in place.</p>
+          </> : policyResult ? <>
             <p>Five validated Product DB updates were routed according to the new approval policy.</p>
             <p>AUTO APPLIED: {policyTrial?.autoApplied}</p>
             <p>HUMAN REVIEWED: {policyTrial?.manualApproved}</p>
@@ -129,7 +145,7 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           </>}
         </div>
         <button onClick={() => onContinue(step)} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded transition-colors">
-          {policyResult ? 'Acknowledge policy trial' : recognition ? 'Acknowledge progress' : result ? 'Acknowledge pilot result' : expansion ? 'Acknowledge pilot expansion' : cleared ? 'Acknowledge queue result' : operational ? 'Acknowledge operational rollout' : turnaround ? 'Acknowledge turnaround target' : capacity ? 'Acknowledge review capacity' : schema ? 'Acknowledge schema pilot' : schemaResult ? 'Acknowledge batch result' : connection ? 'CONNECT READ ONLY' : connectedResult ? 'Acknowledge connected result' : writeOffer ? 'GRANT BOUNDED WRITE' : writeResult ? 'Acknowledge write pilot result' : writeRollout ? 'Acknowledge standard writeback' : writePressure ? 'Acknowledge approval capacity' : 'Acknowledge pilot approval'}
+          {batchOffer ? 'Acknowledge batch routing' : batchResult ? 'Acknowledge operating scale' : policyResult ? 'Acknowledge policy trial' : recognition ? 'Acknowledge progress' : result ? 'Acknowledge pilot result' : expansion ? 'Acknowledge pilot expansion' : cleared ? 'Acknowledge queue result' : operational ? 'Acknowledge operational rollout' : turnaround ? 'Acknowledge turnaround target' : capacity ? 'Acknowledge review capacity' : schema ? 'Acknowledge schema pilot' : schemaResult ? 'Acknowledge batch result' : connection ? 'CONNECT READ ONLY' : connectedResult ? 'Acknowledge connected result' : writeOffer ? 'GRANT BOUNDED WRITE' : writeResult ? 'Acknowledge write pilot result' : writeRollout ? 'Acknowledge standard writeback' : writePressure ? 'Acknowledge approval capacity' : 'Acknowledge pilot approval'}
         </button>
         <button onClick={onLater} className="w-full mt-3 py-2 text-sm text-slate-400 hover:text-slate-200">Later</button>
       </section>

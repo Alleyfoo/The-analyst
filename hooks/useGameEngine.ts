@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal } from '../constants';
+import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep, ProductWriteClass, ProductWritePolicy, ProductWriteScale } from '../types';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS, PRODUCT_WRITE_QUEUE_INITIAL, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS, PRODUCT_WRITE_QUEUE_CAP, getOperationalProductWriteProposal, PRODUCT_WRITE_CLASSES, PRODUCT_WRITE_AUTO_CLASSES, getPolicyTrialProductWriteProposal, PRODUCT_WRITE_BATCH_SIZE } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -25,7 +25,9 @@ const hasAcceleratedAIReviewDemand = (state: GameState) =>
     (state.expansionProgress.era === 'connected_enterprise' && (state.expansionProgress.transition === null ||
       (state.expansionProgress.transition.targetEra === 'good_enough' &&
        ['write_access_offer', 'write_pilot_active', 'write_pilot_success', 'approval_rollout_ready', 'approval_queue_active', 'approval_bottleneck_visible', 'approval_policy_offer', 'policy_trial_active', 'policy_trial_success'].includes(state.expansionProgress.transition.step)))) ||
-    (state.expansionProgress.era === 'good_enough' && state.expansionProgress.transition === null) ||
+    (state.expansionProgress.era === 'good_enough' && (state.expansionProgress.transition === null ||
+      (state.expansionProgress.transition.targetEra === 'lightspeed' && ['batch_routing_offer', 'batch_routing_active', 'batch_scale_visible'].includes(state.expansionProgress.transition.step)))) ||
+    (state.expansionProgress.era === 'lightspeed' && state.expansionProgress.transition === null) ||
     (state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition?.targetEra === 'acceleration' &&
      (state.expansionProgress.transition.step === 'accelerated_routing_active' || state.expansionProgress.transition.step === 'review_bottleneck_visible'));
 
@@ -118,16 +120,36 @@ const hasWritePilotProof = (state: GameState) => state.connectedEnterprise.produ
 
 const reviewClassIndices = (policy: ProductWritePolicy) => PRODUCT_WRITE_CLASSES
     .map((value, index) => policy.autoClasses.includes(value) ? -1 : index).filter(index => index >= 0);
+const batchRoutingStep = (state: GameState) => state.expansionProgress.era === 'good_enough' &&
+    state.expansionProgress.transition?.targetEra === 'lightspeed' ? state.expansionProgress.transition.step : null;
+const isBatchRoutingPhase = (state: GameState) => ['batch_routing_active', 'batch_scale_visible'].includes(batchRoutingStep(state) ?? '') ||
+    (state.expansionProgress.era === 'lightspeed' && state.expansionProgress.transition === null);
+const isProductWriteScaleValid = (state: GameState) => {
+    const scale = state.connectedEnterprise.productWriteScale;
+    const policy = state.connectedEnterprise.productWritePolicy;
+    return scale.active && scale.batchSize === PRODUCT_WRITE_BATCH_SIZE &&
+      ['batchesProcessed', 'totalRouted', 'autoApplied', 'reviewRouted', 'reviewBacklog'].every(key => Number.isSafeInteger(scale[key as keyof ProductWriteScale]) && Number(scale[key as keyof ProductWriteScale]) >= 0) &&
+      scale.totalRouted / PRODUCT_WRITE_BATCH_SIZE === scale.batchesProcessed &&
+      scale.autoApplied === scale.totalRouted / PRODUCT_WRITE_CLASSES.length * policy.autoClasses.length &&
+      scale.reviewRouted === scale.totalRouted - scale.autoApplied && scale.reviewBacklog <= scale.reviewRouted &&
+      scale.autoApplied <= policy.autoAppliedTotal && scale.reviewRouted <= policy.manualRoutedTotal;
+};
+
 const isOperationalWritePolicy = (state: GameState) => {
     const policy = state.connectedEnterprise.productWritePolicy;
     const queue = state.connectedEnterprise.productWriteQueue;
-    return state.expansionProgress.era === 'good_enough' && state.expansionProgress.transition === null &&
+    const scale = state.connectedEnterprise.productWriteScale;
+    const phase = (state.expansionProgress.era === 'good_enough' && (state.expansionProgress.transition === null ||
+      ['batch_routing_offer', 'batch_routing_active', 'batch_scale_visible'].includes(batchRoutingStep(state) ?? ''))) ||
+      (state.expansionProgress.era === 'lightspeed' && state.expansionProgress.transition === null);
+    return phase && (isBatchRoutingPhase(state) ? isProductWriteScaleValid(state) : !scale.active && scale.reviewBacklog === 0) &&
       policy.configured && policy.active && !policy.trial.active && policy.trial.total === 5 &&
       policy.trial.autoApplied === policy.autoClasses.length && policy.trial.manualPending === 0 &&
       policy.trial.autoApplied + policy.trial.manualApproved === 5 &&
       policy.routeSequence === policy.autoAppliedTotal + policy.manualRoutedTotal &&
       policy.manualCompleted <= policy.manualRoutedTotal &&
-      queue.pending === policy.legacyPending + policy.manualRoutedTotal - policy.manualCompleted;
+      Number.isSafeInteger(queue.pending + scale.reviewBacklog) &&
+      queue.pending + scale.reviewBacklog === policy.legacyPending + policy.manualRoutedTotal - policy.manualCompleted;
 };
 const isProductWriteQueueActive = (state: GameState) => {
     const queue = state.connectedEnterprise.productWriteQueue;
@@ -136,9 +158,14 @@ const isProductWriteQueueActive = (state: GameState) => {
     const policy = state.connectedEnterprise.productWritePolicy;
     return (prePolicy || isOperationalWritePolicy(state)) &&
       hasWritePilotProof(state) && queue.active && queue.arrivalIntervalTicks === PRODUCT_WRITE_QUEUE_INTERVAL_TICKS &&
-      queue.pending <= PRODUCT_WRITE_QUEUE_CAP && queue.pending + queue.completed === PRODUCT_WRITE_QUEUE_INITIAL + queue.totalArrived &&
+      queue.pending <= PRODUCT_WRITE_QUEUE_CAP &&
+      Number.isSafeInteger(queue.pending + state.connectedEnterprise.productWriteScale.reviewBacklog + queue.completed) &&
+      queue.pending + state.connectedEnterprise.productWriteScale.reviewBacklog + queue.completed === PRODUCT_WRITE_QUEUE_INITIAL + queue.totalArrived &&
       state.connectedEnterprise.writeUses >= 5 + queue.completed + (policy.configured ? policy.trial.autoApplied + policy.trial.manualApproved + policy.autoAppliedTotal : 0);
 };
+const isBatchRoutingEligible = (state: GameState) => state.expansionProgress.era === 'good_enough' &&
+    state.expansionProgress.transition === null && isProductWriteQueueActive(state) && !state.connectedEnterprise.productWriteScale.active;
+
 const policyTrialStep = (state: GameState) => state.expansionProgress.era === 'connected_enterprise' &&
     state.expansionProgress.transition?.targetEra === 'good_enough' ? state.expansionProgress.transition.step : null;
 const hasPolicyTrialProof = (state: GameState) => {
@@ -154,8 +181,9 @@ const queueWriteProposal = (state: GameState, index: number) => {
     if (!policy.active || policy.legacyPending > 0) return getOperationalProductWriteProposal(index);
     const indices = reviewClassIndices(policy);
     const position = policy.manualCompleted;
-    const route = Math.floor(position / indices.length) * 5 + indices[position % indices.length];
-    return { ...PRODUCT_WRITE_PROPOSALS[route % 5], record: `P-P${String(route).padStart(5, '0')}` };
+    const classIndex = indices[position % indices.length];
+    const route = BigInt(position) / BigInt(indices.length) * BigInt(5) + BigInt(classIndex);
+    return { ...PRODUCT_WRITE_PROPOSALS[classIndex], record: `P-P${String(route).padStart(5, '0')}` };
 };
 
 const productWritePressureProof = (state: GameState) => {
@@ -171,6 +199,29 @@ const arriveProductWrite = (prev: GameState, tick: number): Partial<GameState> =
     const queue = prev.connectedEnterprise.productWriteQueue;
     if (prev.isAscending || !isProductWriteQueueActive(prev) || tick < queue.nextArrivalTick) return {};
     const policy = prev.connectedEnterprise.productWritePolicy;
+    if (isBatchRoutingPhase(prev)) {
+      const scale = prev.connectedEnterprise.productWriteScale;
+      // 500 complete logical positions contain exactly 100 of each class, at any starting offset.
+      const automatic = PRODUCT_WRITE_BATCH_SIZE / PRODUCT_WRITE_CLASSES.length * policy.autoClasses.length;
+      const manual = PRODUCT_WRITE_BATCH_SIZE - automatic;
+      const loaded = Math.min(manual, PRODUCT_WRITE_QUEUE_CAP - queue.pending);
+      const additions = [[prev.connectedEnterprise.writeUses, automatic], [policy.autoAppliedTotal, automatic],
+        [policy.manualRoutedTotal, manual], [policy.routeSequence, PRODUCT_WRITE_BATCH_SIZE], [queue.totalArrived, manual],
+        [scale.batchesProcessed, 1], [scale.totalRouted, PRODUCT_WRITE_BATCH_SIZE], [scale.autoApplied, automatic],
+        [scale.reviewRouted, manual], [scale.reviewBacklog, manual - loaded], [tick, PRODUCT_WRITE_QUEUE_INTERVAL_TICKS],
+        [queue.pending + queue.completed + scale.reviewBacklog, manual]];
+      if (!additions.every(([value, increment]) => Number.isSafeInteger(value + increment) && value + increment >= 0)) return {};
+      const nextScale = { ...scale, batchesProcessed: scale.batchesProcessed + 1, totalRouted: scale.totalRouted + PRODUCT_WRITE_BATCH_SIZE,
+        autoApplied: scale.autoApplied + automatic, reviewRouted: scale.reviewRouted + manual, reviewBacklog: scale.reviewBacklog + manual - loaded };
+      return { connectedEnterprise: { ...prev.connectedEnterprise, productWriteScale: nextScale,
+        writeUses: prev.connectedEnterprise.writeUses + automatic,
+        productWritePolicy: { ...policy, autoAppliedTotal: policy.autoAppliedTotal + automatic, manualRoutedTotal: policy.manualRoutedTotal + manual,
+          routeSequence: policy.routeSequence + PRODUCT_WRITE_BATCH_SIZE },
+        productWriteQueue: { ...queue, pending: queue.pending + loaded, totalArrived: queue.totalArrived + manual,
+          peakPending: Math.max(queue.peakPending, queue.pending + loaded), nextArrivalTick: tick + PRODUCT_WRITE_QUEUE_INTERVAL_TICKS } },
+        ...(batchRoutingStep(prev) === 'batch_routing_active' && nextScale.batchesProcessed >= 3 && nextScale.totalRouted >= 1500 ? {
+          expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'lightspeed', step: 'batch_scale_visible' } } } : {}) };
+    }
     if (isOperationalWritePolicy(prev)) {
       const automatic = policy.autoClasses.includes(PRODUCT_WRITE_CLASSES[policy.routeSequence % 5]);
       const manual = !automatic && queue.pending < PRODUCT_WRITE_QUEUE_CAP;
@@ -210,6 +261,16 @@ const hydrateProductWritePolicy = (saved: any): ProductWritePolicy => {
         manualPending: trial.manualPending, manualApproved: trial.manualApproved } };
 };
 
+const hydrateProductWriteScale = (saved: any): ProductWriteScale => {
+    const empty = { ...INITIAL_STATE.connectedEnterprise.productWriteScale };
+    if (!saved || saved.active !== true || saved.batchSize !== PRODUCT_WRITE_BATCH_SIZE ||
+      !['batchesProcessed', 'totalRouted', 'autoApplied', 'reviewRouted', 'reviewBacklog'].every(key => Number.isSafeInteger(saved[key]) && saved[key] >= 0) ||
+      saved.totalRouted / PRODUCT_WRITE_BATCH_SIZE !== saved.batchesProcessed ||
+      saved.autoApplied + saved.reviewRouted !== saved.totalRouted || saved.reviewBacklog > saved.reviewRouted) return empty;
+    return { active: true, batchSize: PRODUCT_WRITE_BATCH_SIZE, batchesProcessed: saved.batchesProcessed,
+      totalRouted: saved.totalRouted, autoApplied: saved.autoApplied, reviewRouted: saved.reviewRouted, reviewBacklog: saved.reviewBacklog };
+};
+
 const hydrateState = (parsed: any): GameState => {
     const savedWritePilot = parsed.connectedEnterprise?.productWritePilot;
     const validWritePilot = savedWritePilot?.total === 5 && Number.isSafeInteger(savedWritePilot.completed) &&
@@ -221,6 +282,7 @@ const hydrateState = (parsed: any): GameState => {
         ...INITIAL_STATE,
         ...parsed,
         connectedEnterprise: {
+            productWriteScale: hydrateProductWriteScale(parsed.connectedEnterprise?.productWriteScale),
             productWritePolicy: hydrateProductWritePolicy(parsed.connectedEnterprise?.productWritePolicy),
             productDb: { connected: parsed.connectedEnterprise?.productDb?.connected === true && ['read', 'read_write'].includes(parsed.connectedEnterprise.productDb.access),
                 access: parsed.connectedEnterprise?.productDb?.connected === true && ['read', 'read_write'].includes(parsed.connectedEnterprise.productDb.access) ? parsed.connectedEnterprise.productDb.access : 'none' },
@@ -788,6 +850,7 @@ export const useGameEngine = () => {
           prev.aiReviewQueue.pending !== 0 || prev.aiReviewQueue.completed !== 6 || prev.aiReviewDemand.active)) return prev;
       if (targetEra === 'connected_enterprise' && (prev.expansionProgress.era !== 'acceleration' ||
           prev.schemaBatchReview.batchesCompleted < 2 || step !== 'read_connection_offer')) return prev;
+      if (targetEra === 'lightspeed' && (!isBatchRoutingEligible(prev) || step !== 'batch_routing_offer')) return prev;
       if (targetEra === 'good_enough' && (!isWritePilotEligible(prev) || step !== 'write_access_offer')) return prev;
       return {
         ...prev,
@@ -800,7 +863,7 @@ export const useGameEngine = () => {
     setState(prev => {
       if (!isExpansionEra(targetEra)) return prev;
       // AI establishment belongs exclusively to the acknowledged first-queue result below.
-      if (targetEra === 'ai_pilot' || targetEra === 'acceleration' || targetEra === 'connected_enterprise' || targetEra === 'good_enough') return prev;
+      if (targetEra === 'ai_pilot' || targetEra === 'acceleration' || targetEra === 'connected_enterprise' || targetEra === 'good_enough' || targetEra === 'lightspeed') return prev;
       if (prev.expansionProgress.transition?.targetEra !== targetEra) return prev;
       return {
         ...prev,
@@ -832,6 +895,10 @@ export const useGameEngine = () => {
 
   useEffect(() => {
     if (!state.isAscending && isWritePilotEligible(state)) beginExpansionTransition('good_enough', 'write_access_offer');
+  }, [state.isAscending, state.expansionProgress, state.connectedEnterprise, beginExpansionTransition]);
+
+  useEffect(() => {
+    if (!state.isAscending && isBatchRoutingEligible(state)) beginExpansionTransition('lightspeed', 'batch_routing_offer');
   }, [state.isAscending, state.expansionProgress, state.connectedEnterprise, beginExpansionTransition]);
 
   const pendingPilot = state.expansionProgress.transition;
@@ -1048,9 +1115,14 @@ export const useGameEngine = () => {
       if (attempt.kind === 'queue') {
         const queue = prev.connectedEnterprise.productWriteQueue;
         if (!isProductWriteQueueActive(prev) || !canPresentPilotIntroduction(prev, true) || queue.pending <= 0 || attempt.index !== queue.completed) return prev;
+        const scale = prev.connectedEnterprise.productWriteScale;
+        const refill = scale.active && scale.reviewBacklog > 0 ? 1 : 0;
+        if (scale.active && ![prev.connectedEnterprise.writeUses + 1, queue.completed + 1,
+          prev.connectedEnterprise.productWritePolicy.manualCompleted + 1].every(Number.isSafeInteger)) return prev;
         const proposal = queueWriteProposal(prev, attempt.index);
         const next = { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, writeUses: prev.connectedEnterprise.writeUses + 1,
-          productWriteQueue: { ...queue, pending: queue.pending - 1, completed: queue.completed + 1 },
+          productWriteQueue: { ...queue, pending: queue.pending - 1 + refill, completed: queue.completed + 1 },
+          productWriteScale: { ...scale, reviewBacklog: scale.reviewBacklog - refill },
           productWritePolicy: prev.connectedEnterprise.productWritePolicy.active ? { ...prev.connectedEnterprise.productWritePolicy,
             legacyPending: Math.max(0, prev.connectedEnterprise.productWritePolicy.legacyPending - 1),
             manualCompleted: prev.connectedEnterprise.productWritePolicy.manualCompleted + (prev.connectedEnterprise.productWritePolicy.legacyPending === 0 ? 1 : 0) }
@@ -1128,6 +1200,27 @@ export const useGameEngine = () => {
       if (!canPresentPilotIntroduction(prev) || writePolicyFeedbackStep(prev) !== 'policy_trial_success') return prev;
       return { ...prev, expansionProgress: { era: 'good_enough', transition: null }, connectedEnterprise: { ...prev.connectedEnterprise,
         productWritePolicy: { ...prev.connectedEnterprise.productWritePolicy, active: true, legacyPending: prev.connectedEnterprise.productWriteQueue.pending } } };
+    });
+  };
+
+  const writeScaleFeedbackStep = (snapshot: GameState): 'batch_routing_offer' | 'batch_scale_visible' | null => {
+    if (!isProductWriteQueueActive(snapshot)) return null;
+    const scale = snapshot.connectedEnterprise.productWriteScale;
+    if (batchRoutingStep(snapshot) === 'batch_routing_offer' && !scale.active) return 'batch_routing_offer';
+    return batchRoutingStep(snapshot) === 'batch_scale_visible' && isProductWriteScaleValid(snapshot) &&
+      scale.batchesProcessed >= 3 && scale.totalRouted >= 1500 ? 'batch_scale_visible' : null;
+  };
+  const acknowledgeProductWriteScale = (expectedStep: 'batch_routing_offer' | 'batch_scale_visible') => {
+    setState(prev => {
+      if (!canPresentPilotIntroduction(prev) || writeScaleFeedbackStep(prev) !== expectedStep) return prev;
+      if (expectedStep === 'batch_routing_offer') {
+        if (!Number.isSafeInteger(prev.tick + PRODUCT_WRITE_QUEUE_INTERVAL_TICKS)) return prev;
+        return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise,
+          productWriteScale: { ...INITIAL_STATE.connectedEnterprise.productWriteScale, active: true, batchSize: PRODUCT_WRITE_BATCH_SIZE },
+          productWriteQueue: { ...prev.connectedEnterprise.productWriteQueue, nextArrivalTick: prev.tick + PRODUCT_WRITE_QUEUE_INTERVAL_TICKS } },
+          expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'lightspeed', step: 'batch_routing_active' } } };
+      }
+      return { ...prev, expansionProgress: { era: 'lightspeed', transition: null } };
     });
   };
 
@@ -1688,6 +1781,7 @@ export const useGameEngine = () => {
     productWriteProposal: productWriteAttempt ? (productWriteAttempt.kind === 'queue'
       ? queueWriteProposal(state, productWriteAttempt.index) : productWriteAttempt.kind === 'policy_trial'
         ? getPolicyTrialProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
+    writeScaleUpdate: { step: writeScaleFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     writePolicyUpdate: { step: writePolicyFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     policyTrialAvailable: isPolicyTrialActive(state) && canPresentPilotIntroduction(state),
     writeQueueUpdate: { step: writeQueueFeedbackStep(state), available: canPresentPilotIntroduction(state) },
@@ -1710,7 +1804,7 @@ export const useGameEngine = () => {
       acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
       connectProductDb, acknowledgeConnectedResult,
       grantProductWrite, openProductWriteReview, closeProductWriteReview, applyProductWrite, acknowledgeWriteResult,
-      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy,
+      openNextProductWrite, acknowledgeWriteQueueUpdate, confirmProductWritePolicy, openPolicyTrialWrite, acknowledgeProductWritePolicy, acknowledgeProductWriteScale,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

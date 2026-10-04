@@ -717,3 +717,11 @@ export const PRODUCT_WRITE_CLASS_DETAILS = [
 export const getPolicyTrialProductWriteProposal = (index: number) => ({
   ...PRODUCT_WRITE_PROPOSALS[index], record: `P-T${String(index).padStart(5, '0')}`,
 });
+
+// S11 changes routing scale only, retaining the ten-tick Product DB schedule.
+export const PRODUCT_WRITE_BATCH_SIZE = 500;
+export const getProductWriteVelocity = (autoClassCount: number) => {
+  const total = PRODUCT_WRITE_BATCH_SIZE / (PRODUCT_WRITE_QUEUE_INTERVAL_TICKS * TICK_RATE_MS / 1000);
+  const auto = total * autoClassCount / PRODUCT_WRITE_CLASSES.length;
+  return { total, auto, review: total - auto };
+};

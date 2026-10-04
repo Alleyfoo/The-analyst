@@ -2,7 +2,7 @@
 
 This inventory covers every `types.ts::GameState` field. Initial values come from `types.ts::INITIAL_STATE`; writes come from `hooks/useGameEngine.ts::useGameEngine` actions/update loop and `constants.ts` effects. All fields below are serialized to `the_analyst_save_v1`, even derived values. Persistence does not imply validation or an invariant enforced on every write.
 
-S0 added persisted expansion progression, S1 the organisational handoff, S2 one assistive SQL trial, S3 a finite review queue, G1 an Ascension boundary, S4 continuous SQL demand, S5 accelerated routing/explicit Acceleration establishment, S6 two schema exception batches, S7 local Product DB read context/Connected Enterprise, S8 a bounded five-write pilot, S9 recurring human-approved Product DB writebacks, and S10 bounded write policy/Good Enough. Original resource/update rules remain unchanged. The design authority remains [AI_EXPANSION.md](../design/AI_EXPANSION.md), whose baseline evidence describes the pre-S0 snapshot.
+S0 added persisted expansion progression, S1 the organisational handoff, S2 one assistive SQL trial, S3 a finite review queue, G1 an Ascension boundary, S4 continuous SQL demand, S5 accelerated routing/explicit Acceleration establishment, S6 two schema exception batches, S7 local Product DB read context/Connected Enterprise, S8 a bounded five-write pilot, S9 recurring human-approved Product DB writebacks, S10 bounded write policy/Good Enough, and S11 aggregate batch routing/Lightspeed. Original resource/update rules remain unchanged. The design authority remains [AI_EXPANSION.md](../design/AI_EXPANSION.md), whose baseline evidence describes the pre-S0 snapshot.
 
 | Purpose | Fields and initial values | Meaning / writers |
 | --- | --- | --- |
@@ -244,3 +244,49 @@ After legacy drains, `queueWriteProposal` derives the next **REVIEW-only** templ
 All trial/live automatic/manual writes remain correct and grant **zero raw/clean/metrics/PU/TU/quality/meeting rewards or costs**. Automatic writes use counters, never a per-two-second log stream; manual writes retain ordinary game logs. No confidence, bad writes, incidents, rollback, schema changes, broader permissions, self-approval, external API or independent audit exists. SQL retains 20-tick/cap-twelve incoming demand, human EXECUTE and original 100-clean/250-PU prestige/meeting reward through trial/result and established Good Enough (`hasAcceleratedAIReviewDemand`). READ context, S6/S7 proof/manual behavior, G1 Ascension deferral and factory reset remain unchanged.
 
 Whole-state two-second autosave retains selection, trial/result, active/legacy counts and route sequence. Attempt IDs/dialogs remain transient; reload neither repeats trial AUTO writes nor repays human work, rewrites backlog or performs offline routing. The original unsaved two-second window remains. Focused checks cover all 16 policies, fail-closed hydration, trial isolation/authority, both flows, deterministic live routing/cap retry/IDs, SQL and S0-S9/G1; Chromium checks actual mixed/all-manual flows and prior S7-S9/G1 behavior. These checks are scoped, not exhaustive gameplay validation.
+
+
+## Product DB batch scale / Lightspeed (S11)
+
+S11 changes scale, preserving the S10 fixed policy and bounded READ_WRITE authority. `isBatchRoutingEligible` requires exact **good_enough/null**, independent connected READ_WRITE/S8 proof, configured active completed S10 policy and coherent active write service. **Every AUTO subset, including empty, qualifies.** A guarded effect/`beginExpansionTransition` offers **lightspeed/batch_routing_offer**. Workstation's opt-in Review batch routing uses `AIPilotIntroduction`; Later retains the offer. S10 single-write routing/cap/retry behavior continues until explicit acknowledgement. Scores never supply proof or permission.
+
+`types.ts::ProductWriteScale` lives under `connectedEnterprise.productWriteScale`; fresh/legacy defaults are:
+
+```ts
+{ active: false, batchSize: 0, batchesProcessed: 0, totalRouted: 0,
+  autoApplied: 0, reviewRouted: 0, reviewBacklog: 0 }
+```
+
+These are persisted service/proof counters, not resources. Scale.autoApplied/reviewRouted count **batch-origin work only**; S10 policy totals retain all previous work. `hydrateProductWriteScale` accepts active strictly true, supported batchSize **500**, nonnegative safe-integer counts, totalRouted/500=batchesProcessed, automatic+review=total and backlog<=review routed. Missing/inactive/malformed scale defaults empty. Operational guards additionally require exact batch phase, policy-dependent automatic split and cumulative policy proof; invalid batch-phase saves cannot fall back to single-write automation. Neither scale/backlog nor era grants Product DB access. S10 class hydration remains authoritative and fail-closed.
+
+`acknowledgeProductWriteScale('batch_routing_offer')` requires current offer/coherent service/clear original activity guards. It sets scale active/500 with counters zero, schedules the first batch at current tick+10 and stores **good_enough/lightspeed/batch_routing_active**. It changes no policy, authority, existing queue, legacy snapshot or reward, and does not establish Lightspeed. No new policy editor or generic batching framework exists.
+
+`constants.ts::PRODUCT_WRITE_BATCH_SIZE=500`, retained `PRODUCT_WRITE_QUEUE_INTERVAL_TICKS=10` and unchanged `TICK_RATE_MS=200` define the service. Each due `arriveProductWrite` opportunity represents **500 consecutive positions** of the existing repeated five-class cycle, exactly **100 of each class**, at any initial route offset. If N of the four eligible classes are AUTO, automatic=100*N and review=500-automatic. Category contributes **100 REVIEW** per batch always. The exact saved policy is never widened.
+
+| AUTO classes | Automatic / REVIEW per batch | Derived automatic / human routing per second |
+| --- | --- | --- |
+| 0 (all-manual) | 0 /500 | 0 /250 |
+| 2 | 200 /300 | 100 /150 |
+| 4 | 400 /100 | 200 /50 |
+
+One atomic update increments batchesProcessed once, totalRouted/routeSequence by 500, writeUses/policy.autoAppliedTotal/scale.autoApplied by automatic, and policy.manualRoutedTotal/scale.reviewRouted/queue.totalArrived by the **entire** review count. Only `min(review,37-pending)` enters the actionable window; the remainder enters **reviewBacklog**, which has no gameplay cap. Peak reflects window occupancy only. Example: pending20 +100 review ->window37/backlog83. Queue.totalArrived still means actual manual work entering the service, not merely items loaded into the UI. No review work is dropped or blocked by a full window once batch scale is active.
+
+The exact outstanding-work invariants (`isOperationalWritePolicy`, `isProductWriteQueueActive`) become:
+
+```text
+legacyPending + manualRoutedTotal - manualCompleted = queue.pending + scale.reviewBacklog
+queue.pending + scale.reviewBacklog + queue.completed = 12 + queue.totalArrived
+policy.routeSequence = policy.autoAppliedTotal + policy.manualRoutedTotal
+```
+
+`queue.pending` now means **review window, capped 37**; scale.reviewBacklog means additional waiting correct review work. A successful existing issued queue APPLY still consumes exactly one logical write, increments queue.completed/writeUses and decrements legacyPending or increments post-policy manualCompleted as in S10. If backlog>0, it immediately refills one window slot and decreases backlog one; pending can stay 37 while total outstanding falls one. Without backlog, pending falls one normally. No bulk-approve control or second review UI exists. `ProductWriteReview` shows window/backlog and one-APPLY scope.
+
+Legacy items retain S9 order/P-W IDs and remain manual even if their class is now AUTO. After legacy drains, `queueWriteProposal` retains the filtered REVIEW-only sequence and P-P positional IDs; category always remains present. IDs use transient BigInt arithmetic for exact virtual cycle positions, producing strings only, with no new saved object/currency. All ordinary reachable S10 IDs remain identical. Incoming batches and proof steps cannot change held proposal identity; duplicate/stale/closed/reload-lost attempts remain rejected.
+
+Every proposed batch/manual counter increment, next-tick addition and aggregate historical sum is checked for safe integer range before writing. At numeric exhaustion a whole batch or approval is refused without partial counters, wrapping, negative backlog or reward. This is a representation guard, not a backlog penalty/hard cap or general baseline-number repair. Each engine tick handles one due opportunity, schedules tick+10 and performs no wall-clock/offline replay. Existing Ascension/reboot pauses remain; dialogs/minigames/busy work leave batch service running.
+
+**Three completed batches AND totalRouted>=1500** advance only **batch_routing_active ->batch_scale_visible**, once. No manual-clearance or AUTO selection is required. Opt-in OPERATING AT SCALE reports current live routed/automatic/review/backlog totals, so later batches may raise the display above 1500 while the result is deferred. Only guarded `acknowledgeProductWriteScale('batch_scale_visible')` establishes **lightspeed/null**, retaining every policy/scale/window/backlog/history/schedule counter. Generic `establishExpansionEra('lightspeed')` is refused. Established Lightspeed continues the same batch service.
+
+`getProductWriteVelocity` derives **250 write intents/sec =500/(10*200ms)** and the policy split, displayed in the existing Workstation Product DB block. Velocity is a rate summary, not a persisted score/spendable currency or economic formula. The existing policy automatic total includes earlier S10 work, whereas scale result counters describe batch work. Automatic batches emit no per-write/batch log stream; individual human writes retain ordinary logs. All writes remain correct with **zero resource/PU/TU/quality/meeting reward or cost**; backlog/full window/all-manual cause no PU/TU/entropy/customer penalty.
+
+Whole-state autosave preserves active scale, size/totals/backlog/proof/step and the existing queue next tick. Reload retains work without replay; issued individual attempts/dialogs remain transient. Original two-second unsaved window remains. SQL retains 20-tick/cap-twelve demand, human EXECUTE and unchanged prestige/meeting rewards through all exact S11 steps and Lightspeed (`hasAcceleratedAIReviewDemand`). S6/S7/manual mapping/history, G1 Ascension deferral and factory reset remain unchanged. No drift/errors/confidence/conflicts/customer impact/rollback, policy edits, authority expansion, additional systems, independent audit or Governance/Crisis mechanics are implemented.
