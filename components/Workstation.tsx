@@ -37,6 +37,9 @@ interface Props {
   connectedUpdate: { step: 'read_connection_offer' | 'connected_mapping_success' | null; available: boolean };
   connectedMappingOffered: boolean;
   connectedMappingAvailable: boolean;
+  writeUpdate: { step: 'write_access_offer' | 'write_pilot_success' | null; available: boolean };
+  productWriteAvailable: boolean;
+  onReviewProductWrite: () => void;
 }
 
 const TerminalLine: React.FC<{ log: LogMessage }> = ({ log }) => {
@@ -70,7 +73,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite }) => {
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -190,7 +193,8 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
         {!accelerationUpdate.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
       </div>}
       {(state.expansionProgress.era === 'acceleration' || state.expansionProgress.era === 'connected_enterprise') &&
-       (state.expansionProgress.transition === null || state.expansionProgress.transition.targetEra === 'connected_enterprise') && state.upgrades['pandas_scripts'] === true && (
+       (state.expansionProgress.transition === null || state.expansionProgress.transition.targetEra === 'connected_enterprise' ||
+        (state.expansionProgress.era === 'connected_enterprise' && state.expansionProgress.transition.targetEra === 'good_enough')) && state.upgrades['pandas_scripts'] === true && (
         <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
           {schemaUpdate.step ? <>
             <p>Management update available</p>
@@ -208,7 +212,18 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
         </div>
       )}
       {(connectedUpdate.step || state.connectedEnterprise.productDb.connected) && <div className="shrink-0 border-b border-blue-800/50 bg-blue-950/30 p-3 text-xs text-slate-300">
-        {state.connectedEnterprise.productDb.connected && <p className="font-bold text-blue-200">CONNECTED SYSTEMS · Product DB · READ ONLY</p>}
+        {state.connectedEnterprise.productDb.connected && <p className="font-bold text-blue-200">CONNECTED SYSTEMS · Product DB · {state.connectedEnterprise.productDb.access === 'read_write' ? 'READ + WRITE · HUMAN APPROVAL REQUIRED' : 'READ ONLY'}</p>}
+        {writeUpdate.step && <button onClick={onReviewPilot} disabled={!writeUpdate.available}
+          className="mt-2 w-full py-2 border border-indigo-500 rounded text-indigo-200 disabled:opacity-40 hover:bg-indigo-900/30">
+          {writeUpdate.step === 'write_access_offer' ? 'Review writeback access' : 'Review write pilot result'}
+        </button>}
+        {state.connectedEnterprise.productWritePilot.active && <>
+          <p className="mt-2">Write pilot: {state.connectedEnterprise.productWritePilot.pending} pending / 5 · {state.connectedEnterprise.writeUses} applied</p>
+          <button onClick={onReviewProductWrite} disabled={!productWriteAvailable}
+            className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 disabled:opacity-40 hover:bg-blue-900/30">Review prepared Product DB write</button>
+        </>}
+        {state.expansionProgress.transition?.targetEra === 'good_enough' && state.expansionProgress.transition.step === 'approval_rollout_ready' &&
+          <p className="mt-2">Write pilot complete · 5 approved / 5 applied · Human approval required</p>}
         {connectedUpdate.step && <>
           <button onClick={onReviewPilot} disabled={!connectedUpdate.available}
             className="mt-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">

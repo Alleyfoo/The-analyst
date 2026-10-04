@@ -176,7 +176,7 @@ export interface GameState {
   aiReviewQueue: { pending: number; completed: number; wave: number };
   aiReviewDemand: { active: boolean; arrivalIntervalTicks: number; nextArrivalTick: number; totalArrived: number; totalCompleted: number; acceleratedArrivals: number; acceleratedReviews: number; acceleratedPeakPending: number };
   schemaBatchReview: { introduced: boolean; active: boolean; batchSize: number; autoMapped: number; exceptionsTotal: number; exceptionsResolved: number; batchesCompleted: number };
-  connectedEnterprise: { productDb: { connected: boolean; access: 'none' | 'read' }; readUses: number; mappingBatch: { active: boolean; completed: boolean } };
+  connectedEnterprise: { productDb: { connected: boolean; access: 'none' | 'read' | 'read_write' }; readUses: number; mappingBatch: { active: boolean; completed: boolean }; writeUses: number; productWritePilot: { active: boolean; pending: number; completed: number; total: number } };
 
   // Resources
   rawData: number;
@@ -250,7 +250,7 @@ export const INITIAL_STATE: GameState = {
   aiReviewQueue: { pending: 0, completed: 0, wave: 0 },
   aiReviewDemand: { active: false, arrivalIntervalTicks: 40, nextArrivalTick: 0, totalArrived: 0, totalCompleted: 0, acceleratedArrivals: 0, acceleratedReviews: 0, acceleratedPeakPending: 0 },
   schemaBatchReview: { introduced: false, active: false, batchSize: 0, autoMapped: 0, exceptionsTotal: 0, exceptionsResolved: 0, batchesCompleted: 0 },
-  connectedEnterprise: { productDb: { connected: false, access: 'none' }, readUses: 0, mappingBatch: { active: false, completed: false } },
+  connectedEnterprise: { productDb: { connected: false, access: 'none' }, readUses: 0, mappingBatch: { active: false, completed: false }, writeUses: 0, productWritePilot: { active: false, pending: 0, completed: 0, total: 0 } },
   rawData: 100, 
   maxStorage: 500, // Initial cap
   cleanData: 0,

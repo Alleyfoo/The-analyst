@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { GameState, INITIAL_STATE, ResourceType, Upgrade, GameEvent, ChatMessage, ChatScenario, Campaign, CampaignType, EXPANSION_ERAS, ExpansionEra, AI_PILOT_STEPS, AIPilotStep } from '../types';
-import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS } from '../constants';
+import { TICK_RATE_MS, UPGRADES, EVENTS, checkUpgradeVisibility, HISTORY_LENGTH, CHAT_SCENARIOS, TERMINAL_FLAVOR_TEXT, isAIPilotEligible, isAscensionDeferred, AI_REVIEW_QUEUE_CAP, AI_REVIEW_ACCELERATED_INTERVAL_TICKS, RAW_HEADERS, PRODUCT_WRITE_PROPOSALS } from '../constants';
 
 // Board Meeting Settings
 const MEETING_DURATION_SEC = 30;
@@ -22,7 +22,9 @@ const hasAcceleratedAIReviewDemand = (state: GameState) =>
     (state.expansionProgress.era === 'acceleration' && (state.expansionProgress.transition === null ||
       (state.expansionProgress.transition.targetEra === 'connected_enterprise' &&
        ['read_connection_offer', 'product_db_read_connected', 'connected_mapping_success'].includes(state.expansionProgress.transition.step)))) ||
-    (state.expansionProgress.era === 'connected_enterprise' && state.expansionProgress.transition === null) ||
+    (state.expansionProgress.era === 'connected_enterprise' && (state.expansionProgress.transition === null ||
+      (state.expansionProgress.transition.targetEra === 'good_enough' &&
+       ['write_access_offer', 'write_pilot_active', 'write_pilot_success', 'approval_rollout_ready'].includes(state.expansionProgress.transition.step)))) ||
     (state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition?.targetEra === 'acceleration' &&
      (state.expansionProgress.transition.step === 'accelerated_routing_active' || state.expansionProgress.transition.step === 'review_bottleneck_visible'));
 
@@ -96,7 +98,24 @@ const isConnectedMappingActive = (state: GameState) => state.expansionProgress.e
 
 type SchemaBatchAttempt = { id: number; kind: 'schema' | 'connected'; fieldIds: number[]; batchesCompleted: number };
 
+const isWritePilotEligible = (state: GameState) => state.expansionProgress.era === 'connected_enterprise' &&
+    state.expansionProgress.transition === null && state.connectedEnterprise.productDb.connected &&
+    state.connectedEnterprise.productDb.access === 'read' && state.connectedEnterprise.mappingBatch.completed && state.connectedEnterprise.readUses >= 1;
+
+const isWritePilotActive = (state: GameState) => state.expansionProgress.era === 'connected_enterprise' &&
+    state.expansionProgress.transition?.targetEra === 'good_enough' && state.expansionProgress.transition.step === 'write_pilot_active' &&
+    state.connectedEnterprise.productDb.connected && state.connectedEnterprise.productDb.access === 'read_write' &&
+    state.connectedEnterprise.productWritePilot.active && state.connectedEnterprise.productWritePilot.total === 5 &&
+    state.connectedEnterprise.productWritePilot.pending > 0 &&
+    state.connectedEnterprise.productWritePilot.completed + state.connectedEnterprise.productWritePilot.pending === 5 &&
+    state.connectedEnterprise.writeUses === state.connectedEnterprise.productWritePilot.completed;
+
+type ProductWriteAttempt = { id: number; index: number };
+
 const hydrateState = (parsed: any): GameState => {
+    const savedWritePilot = parsed.connectedEnterprise?.productWritePilot;
+    const validWritePilot = savedWritePilot?.total === 5 && Number.isSafeInteger(savedWritePilot.completed) &&
+        savedWritePilot.completed >= 0 && savedWritePilot.completed <= 5 && savedWritePilot.pending === 5 - savedWritePilot.completed;
     const savedProgress = parsed.expansionProgress;
     const savedTransition = savedProgress?.transition;
     // Merge basic fields to ensure new properties from updates exist
@@ -104,8 +123,10 @@ const hydrateState = (parsed: any): GameState => {
         ...INITIAL_STATE,
         ...parsed,
         connectedEnterprise: {
-            productDb: { connected: parsed.connectedEnterprise?.productDb?.connected === true && parsed.connectedEnterprise.productDb.access === 'read',
-                access: parsed.connectedEnterprise?.productDb?.connected === true && parsed.connectedEnterprise.productDb.access === 'read' ? 'read' : 'none' },
+            productDb: { connected: parsed.connectedEnterprise?.productDb?.connected === true && ['read', 'read_write'].includes(parsed.connectedEnterprise.productDb.access),
+                access: parsed.connectedEnterprise?.productDb?.connected === true && ['read', 'read_write'].includes(parsed.connectedEnterprise.productDb.access) ? parsed.connectedEnterprise.productDb.access : 'none' },
+            writeUses: Number.isSafeInteger(parsed.connectedEnterprise?.writeUses) && parsed.connectedEnterprise.writeUses >= 0 ? parsed.connectedEnterprise.writeUses : 0,
+            productWritePilot: validWritePilot ? { active: savedWritePilot.active === true && savedWritePilot.pending > 0, pending: savedWritePilot.pending, completed: savedWritePilot.completed, total: 5 } : { ...INITIAL_STATE.connectedEnterprise.productWritePilot },
             readUses: Number.isSafeInteger(parsed.connectedEnterprise?.readUses) && parsed.connectedEnterprise.readUses >= 0 ? parsed.connectedEnterprise.readUses : 0,
             mappingBatch: { active: parsed.connectedEnterprise?.mappingBatch?.active === true && parsed.connectedEnterprise.mappingBatch.completed !== true,
                 completed: parsed.connectedEnterprise?.mappingBatch?.completed === true },
@@ -202,6 +223,9 @@ export const useGameEngine = () => {
   const [schemaBatchAttempt, setSchemaBatchAttempt] = useState<SchemaBatchAttempt | null>(null);
   const schemaBatchAttemptRef = useRef<SchemaBatchAttempt | null>(null);
   const schemaBatchSequence = useRef(0);
+  const [productWriteAttempt, setProductWriteAttempt] = useState<ProductWriteAttempt | null>(null);
+  const productWriteAttemptRef = useRef<ProductWriteAttempt | null>(null);
+  const productWriteSequence = useRef(0);
 
   useEffect(() => {
     if (!state.pandasMode) {
@@ -657,6 +681,7 @@ export const useGameEngine = () => {
           prev.aiReviewQueue.pending !== 0 || prev.aiReviewQueue.completed !== 6 || prev.aiReviewDemand.active)) return prev;
       if (targetEra === 'connected_enterprise' && (prev.expansionProgress.era !== 'acceleration' ||
           prev.schemaBatchReview.batchesCompleted < 2 || step !== 'read_connection_offer')) return prev;
+      if (targetEra === 'good_enough' && (!isWritePilotEligible(prev) || step !== 'write_access_offer')) return prev;
       return {
         ...prev,
         expansionProgress: { ...prev.expansionProgress, transition: { targetEra, step } },
@@ -668,7 +693,7 @@ export const useGameEngine = () => {
     setState(prev => {
       if (!isExpansionEra(targetEra)) return prev;
       // AI establishment belongs exclusively to the acknowledged first-queue result below.
-      if (targetEra === 'ai_pilot' || targetEra === 'acceleration' || targetEra === 'connected_enterprise') return prev;
+      if (targetEra === 'ai_pilot' || targetEra === 'acceleration' || targetEra === 'connected_enterprise' || targetEra === 'good_enough') return prev;
       if (prev.expansionProgress.transition?.targetEra !== targetEra) return prev;
       return {
         ...prev,
@@ -698,12 +723,16 @@ export const useGameEngine = () => {
     }
   }, [state.isAscending, state.expansionProgress, state.schemaBatchReview.batchesCompleted, beginExpansionTransition]);
 
+  useEffect(() => {
+    if (!state.isAscending && isWritePilotEligible(state)) beginExpansionTransition('good_enough', 'write_access_offer');
+  }, [state.isAscending, state.expansionProgress, state.connectedEnterprise, beginExpansionTransition]);
+
   const pendingPilot = state.expansionProgress.transition;
   const pilotStep = pendingPilot?.targetEra === 'ai_pilot'
     ? AI_PILOT_STEPS.find(step => step === pendingPilot.step) ?? null
     : null;
-  const canPresentPilotIntroduction = (snapshot: GameState) =>
-    !isRebooting && !snapshot.isAscending && !snapshot.blockingTask &&
+  const canPresentPilotIntroduction = (snapshot: GameState, approvingWrite = false) =>
+    (approvingWrite || !productWriteAttemptRef.current) && !isRebooting && !snapshot.isAscending && !snapshot.blockingTask &&
     !snapshot.coffeeBreak.active && !snapshot.boardMeeting.active && snapshot.activeEvents.length === 0 &&
     !snapshot.spaghettiMode && !snapshot.pandasMode && !snapshot.sqlMode && !snapshot.modelMode &&
     !snapshot.miningMode && !snapshot.flowMode && !snapshot.buzzwordMode && !snapshot.pdfMode;
@@ -845,6 +874,64 @@ export const useGameEngine = () => {
     setState(prev => {
       if (!canPresentPilotIntroduction(prev) || connectedFeedbackStep(prev) !== 'connected_mapping_success') return prev;
       return { ...prev, expansionProgress: { ...prev.expansionProgress, era: 'connected_enterprise', transition: null } };
+    });
+  };
+
+  const writeFeedbackStep = (snapshot: GameState): 'write_access_offer' | 'write_pilot_success' | null => {
+    const transition = snapshot.expansionProgress.transition;
+    const connected = snapshot.connectedEnterprise;
+    if (snapshot.expansionProgress.era !== 'connected_enterprise' || transition?.targetEra !== 'good_enough' || !connected.productDb.connected) return null;
+    if (transition.step === 'write_access_offer' && connected.productDb.access === 'read' && connected.mappingBatch.completed && connected.readUses >= 1) return 'write_access_offer';
+    return transition.step === 'write_pilot_success' && connected.productDb.access === 'read_write' &&
+      !connected.productWritePilot.active && connected.productWritePilot.total === 5 && connected.productWritePilot.pending === 0 &&
+      connected.productWritePilot.completed === 5 && connected.writeUses === 5 ? 'write_pilot_success' : null;
+  };
+
+  const grantProductWrite = (requestedAccess: string) => {
+    setState(prev => {
+      if (requestedAccess !== 'read_write' || !canPresentPilotIntroduction(prev) || writeFeedbackStep(prev) !== 'write_access_offer') return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, productDb: { connected: true, access: 'read_write' },
+        writeUses: 0, productWritePilot: { active: true, pending: 5, completed: 0, total: 5 } },
+        expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'good_enough', step: 'write_pilot_active' } } };
+    });
+  };
+
+  const openProductWriteReview = () => {
+    const current = stateRef.current;
+    if (!isWritePilotActive(current) || !canPresentPilotIntroduction(current)) return;
+    const attempt = { id: ++productWriteSequence.current, index: current.connectedEnterprise.productWritePilot.completed };
+    productWriteAttemptRef.current = attempt;
+    setProductWriteAttempt(attempt);
+  };
+
+  const closeProductWriteReview = (attemptId: number) => {
+    if (productWriteAttemptRef.current?.id !== attemptId) return;
+    productWriteAttemptRef.current = null;
+    setProductWriteAttempt(null);
+  };
+
+  const applyProductWrite = (attemptId: number) => {
+    const attempt = productWriteAttemptRef.current;
+    if (!attempt || attempt.id !== attemptId) return;
+    // Consume transient approval authority before a duplicate click can reuse it.
+    productWriteAttemptRef.current = null;
+    setProductWriteAttempt(null);
+    setState(prev => {
+      if (!isWritePilotActive(prev) || !canPresentPilotIntroduction(prev, true) || attempt.index !== prev.connectedEnterprise.productWritePilot.completed) return prev;
+      const proposal = PRODUCT_WRITE_PROPOSALS[attempt.index];
+      if (!proposal) return prev;
+      const completed = attempt.index + 1;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, writeUses: prev.connectedEnterprise.writeUses + 1,
+        productWritePilot: { active: completed < 5, total: 5, completed, pending: 5 - completed } },
+        logs: [...prev.logs, { id: Date.now(), text: `Product DB update applied: ${proposal.record}.${proposal.field} (${JSON.stringify(proposal.current)} → ${JSON.stringify(proposal.proposed)})`, type: 'success', timestamp: Date.now() }],
+        ...(completed === 5 ? { expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'good_enough', step: 'write_pilot_success' } } } : {}) };
+    });
+  };
+
+  const acknowledgeWriteResult = () => {
+    setState(prev => {
+      if (!canPresentPilotIntroduction(prev) || writeFeedbackStep(prev) !== 'write_pilot_success') return prev;
+      return { ...prev, expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'good_enough', step: 'approval_rollout_ready' } } };
     });
   };
 
@@ -1401,6 +1488,12 @@ export const useGameEngine = () => {
     schemaUpdate: { step: schemaFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     schemaBatchAvailable: isSchemaBatchActive(state) && state.rawData >= 20 && canPresentPilotIntroduction(state),
     connectedUpdate: { step: connectedFeedbackStep(state), available: canPresentPilotIntroduction(state) },
+    productWriteAttempt,
+    // Local simulated record values derive from the persisted applied prefix, never from logs.
+    productWriteRecords: PRODUCT_WRITE_PROPOSALS.map((proposal, index) => ({ record: proposal.record, field: proposal.field,
+      value: index < state.connectedEnterprise.productWritePilot.completed ? proposal.proposed : proposal.current })),
+    writeUpdate: { step: writeFeedbackStep(state), available: canPresentPilotIntroduction(state) },
+    productWriteAvailable: isWritePilotActive(state) && canPresentPilotIntroduction(state),
     connectedMappingOffered: isConnectedMappingActive(state),
     connectedMappingAvailable: isConnectedMappingActive(state) && state.rawData >= 20 && canPresentPilotIntroduction(state),
     operationalRollout: { offered: state.expansionProgress.era === 'ai_pilot' &&
@@ -1413,6 +1506,7 @@ export const useGameEngine = () => {
       acknowledgeOperationalRollout, acknowledgeAccelerationUpdate,
       acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
       connectProductDb, acknowledgeConnectedResult,
+      grantProductWrite, openProductWriteReview, closeProductWriteReview, applyProductWrite, acknowledgeWriteResult,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

@@ -5,6 +5,7 @@ import { DataStream } from './components/DataStream';
 import { Workstation } from './components/Workstation';
 import { DashboardPanel } from './components/DashboardPanel';
 import { EventModal } from './components/EventModal';
+import { ProductWriteReview } from './components/ProductWriteReview';
 import { AIPilotIntroduction } from './components/AIPilotIntroduction';
 import { SpaghettiOverlay } from './components/SpaghettiOverlay';
 import { PandasMappingGame } from './components/PandasMappingGame';
@@ -24,7 +25,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, productWriteAttempt } = useGameEngine();
   const [pilotOpen, setPilotOpen] = useState(false);
   useEffect(() => {
     if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready' || pilotIntroduction.step === 'rollout_review') setPilotOpen(false);
@@ -196,6 +197,17 @@ const App: React.FC = () => {
           }} onLater={() => setPilotOpen(false)} />
       )}
 
+      {pilotOpen && writeUpdate.step && writeUpdate.available && (
+        <AIPilotIntroduction step={writeUpdate.step}
+          onContinue={step => {
+            if (step === 'write_access_offer') { actions.grantProductWrite('read_write'); setPilotOpen(false); }
+            if (step === 'write_pilot_success') { actions.acknowledgeWriteResult(); setPilotOpen(false); }
+          }} onLater={() => setPilotOpen(false)} />
+      )}
+      {productWriteAttempt && <ProductWriteReview attempt={productWriteAttempt}
+        pending={state.connectedEnterprise.productWritePilot.pending} sqlPending={state.aiReviewQueue.pending}
+        onApply={actions.applyProductWrite} onLater={actions.closeProductWriteReview} />}
+
       {/* Top Bar */}
       <WorldStats 
         stats={state.worldStats} 
@@ -246,6 +258,9 @@ const App: React.FC = () => {
                 schemaUpdate={schemaUpdate}
                 schemaBatchAvailable={schemaBatchAvailable}
                 onReviewSchemaBatch={actions.openSchemaBatchReview}
+                writeUpdate={writeUpdate}
+                productWriteAvailable={productWriteAvailable}
+                onReviewProductWrite={actions.openProductWriteReview}
                 connectedUpdate={connectedUpdate}
                 connectedMappingOffered={connectedMappingOffered}
                 connectedMappingAvailable={connectedMappingAvailable}

@@ -1,4 +1,4 @@
-// Focused S0-S7/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
+// Focused S0-S8/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
 // Browser smoke separately verifies actual rendering and persistence.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -75,6 +75,10 @@ function mount(seed = null, original = false) {
     acceleration: () => api.accelerationUpdate,
     schemaUpdate: () => api.schemaUpdate,
     connectedUpdate: () => api.connectedUpdate,
+    writeUpdate: () => api.writeUpdate,
+    writeAvailable: () => api.productWriteAvailable,
+    writeAttempt: () => api.productWriteAttempt && JSON.parse(JSON.stringify(api.productWriteAttempt)),
+    writeRecords: () => JSON.parse(JSON.stringify(api.productWriteRecords)),
     connectedAvailable: () => api.connectedMappingAvailable,
     schemaAvailable: () => api.schemaBatchAvailable,
     schemaAttempt: () => api.schemaBatchAttempt && JSON.parse(JSON.stringify(api.schemaBatchAttempt)),
@@ -593,7 +597,8 @@ console.log('PASS S6: exact eligibility/defaults/deferral, two finite scales, is
 
 // S7: one local read-only source-context batch; S6 experience stays separate.
 {
-const disconnected={productDb:{connected:false,access:'none'},readUses:0,mappingBatch:{active:false,completed:false}};
+const emptyWrite={writeUses:0,productWritePilot:{active:false,pending:0,completed:0,total:0}};
+const disconnected={productDb:{connected:false,access:'none'},readUses:0,mappingBatch:{active:false,completed:false},...emptyWrite};
 assert.deepEqual(mount().state().connectedEnterprise,disconnected);
 assert.deepEqual(mount({connectedEnterprise:{productDb:{connected:'true',access:'read'},readUses:-1,mappingBatch:{active:1,completed:'true'}}}).state().connectedEnterprise,disconnected);
 assert.deepEqual(mount({connectedEnterprise:{productDb:{connected:true,access:'write'},readUses:'9'}}).state().connectedEnterprise,disconnected,'unknown authority never becomes write or read');
@@ -608,7 +613,7 @@ assert.deepEqual(offer.state().connectedEnterprise,disconnected);ticks(offer,20)
 for(const access of ['none','write','delete','execute','admin','READ','',null,undefined]){const before=offer.state();offer.action('connectProductDb',access);assert.deepEqual(offer.state(),before,'only exact read accepted');}
 for(const block of ['pandasMode','sqlMode','spaghettiMode','modelMode','miningMode','flowMode','buzzwordMode','pdfMode','isAscending'].map(k=>({[k]:true})).concat([{coffeeBreak:{active:true}},{boardMeeting:{active:true}},{activeEvents:[{id:'storage_full_warning'}]},{blockingTask:{name:'Busy'}}])){const denied=mount({...offer.save(),...block}),before=denied.state();denied.action('connectProductDb','read');assert.deepEqual(denied.state(),before);}
 const beforeConnect=offer.state();offer.action('connectProductDb','read');const connected=offer.state();
-assert.deepEqual(connected.connectedEnterprise,{productDb:{connected:true,access:'read'},readUses:0,mappingBatch:{active:true,completed:false}});
+assert.deepEqual(connected.connectedEnterprise,{productDb:{connected:true,access:'read'},readUses:0,mappingBatch:{active:true,completed:false},...emptyWrite});
 assert.deepEqual(connected.expansionProgress,{era:'acceleration',transition:{targetEra:'connected_enterprise',step:'product_db_read_connected'}});
 const actualConnect=JSON.parse(JSON.stringify(connected)),expectedConnect=JSON.parse(JSON.stringify(beforeConnect));for(const key of ['connectedEnterprise','expansionProgress']){delete actualConnect[key];delete expectedConnect[key];}assert.deepEqual(actualConnect,expectedConnect,'connection grants no reward and preserves queue/schema');
 const onceConnect=offer.state();offer.action('connectProductDb','read');offer.action('establishExpansionEra','connected_enterprise');offer.action('acknowledgeConnectedResult');assert.deepEqual(offer.state(),onceConnect,'no reconnect/skip establishment');
@@ -622,15 +627,82 @@ work.action('closeSchemaBatchReview',attempt.id);const closed=work.state();work.
 const retryBefore=work.state();work.action('closeSchemaBatchReview',attempt.id);work.action('completeSchemaBatchReview',attempt.id,pairs,0);assert.deepEqual(work.state(),retryBefore);
 const beforeArrive=work.state();ticks(work,20);assert.equal(work.state().pandasMode,true);assert.equal(work.state().aiReviewQueue.pending,beforeArrive.aiReviewQueue.pending+1);
 const beforeReward=work.state(),rewardReference=mount(beforeReward);rewardReference.action('completePandasLevel',20,50,.04);work.action('completeSchemaBatchReview',retry.id,pairsFor(work),1);const paid=work.state(),rewardExpected=rewardReference.state();
-assert.deepEqual(paid.connectedEnterprise,{productDb:{connected:true,access:'read'},readUses:1,mappingBatch:{active:false,completed:true}});assert.equal(paid.expansionProgress.transition.step,'connected_mapping_success');assert.deepEqual(paid.schemaBatchReview,proof,'S6 proof unchanged');
+assert.deepEqual(paid.connectedEnterprise,{productDb:{connected:true,access:'read'},readUses:1,mappingBatch:{active:false,completed:true},...emptyWrite});assert.equal(paid.expansionProgress.transition.step,'connected_mapping_success');assert.deepEqual(paid.schemaBatchReview,proof,'S6 proof unchanged');
 const paidEconomy=JSON.parse(JSON.stringify(paid));for(const key of ['connectedEnterprise','expansionProgress']){delete paidEconomy[key];delete rewardExpected[key];}assert.deepEqual(paidEconomy,rewardExpected,'same modest mapping reward/log/quality/no meeting effect');
 work.action('completeSchemaBatchReview',retry.id,pairsFor(work),1);assert.deepEqual(work.state(),paid);work.action('closeSchemaBatchReview',retry.id);
 const result=mount(work.save());assert.equal(result.connectedUpdate().step,'connected_mapping_success');assert.equal(result.state().expansionProgress.era,'acceleration','result deferral/reload never establishes');result.action('openSchemaBatchReview');assert.equal(result.schemaAttempt(),null,'completed batch never regenerates');
 for(const block of [{sqlMode:true},{boardMeeting:{active:true}},{isAscending:true}]){const denied=mount({...result.save(),...block}),before=denied.state();denied.action('acknowledgeConnectedResult');assert.deepEqual(denied.state(),before);}
-const beforeEstablished=result.state();result.action('acknowledgeConnectedResult');assert.deepEqual(result.state().expansionProgress,{era:'connected_enterprise',transition:null});assert.deepEqual(result.state().connectedEnterprise,beforeEstablished.connectedEnterprise);assert.deepEqual(result.state().schemaBatchReview,beforeEstablished.schemaBatchReview);assert.deepEqual(result.state().aiReviewDemand,beforeEstablished.aiReviewDemand);assert.deepEqual(result.state().aiReviewQueue,beforeEstablished.aiReviewQueue);
+const beforeEstablished=result.state();result.action('acknowledgeConnectedResult');assert.deepEqual(result.state().expansionProgress,{era:'connected_enterprise',transition:{targetEra:'good_enough',step:'write_access_offer'}});assert.deepEqual(result.state().connectedEnterprise,beforeEstablished.connectedEnterprise);assert.deepEqual(result.state().schemaBatchReview,beforeEstablished.schemaBatchReview);assert.deepEqual(result.state().aiReviewDemand,beforeEstablished.aiReviewDemand);assert.deepEqual(result.state().aiReviewQueue,beforeEstablished.aiReviewQueue);
 const restored=mount(result.save());ticks(restored,20);assert.equal(restored.state().aiReviewDemand.totalArrived,result.state().aiReviewDemand.totalArrived+1);review(restored);assert.equal(restored.state().aiReviewDemand.totalCompleted,result.state().aiReviewDemand.totalCompleted+1);assert.deepEqual(restored.state().connectedEnterprise,result.state().connectedEnterprise);
 for(const level of [0,3])for(const mistakes of [0,1,10]){const game=mount({...connectedSeed,prestige:{level},tick:300});game.action('openSchemaBatchReview');game.tick();const before=game.state(),reference=mount(before);reference.action('completePandasLevel',20,50,Math.max(.01,.05-mistakes*.01));game.action('completeSchemaBatchReview',game.schemaAttempt().id,pairsFor(game),mistakes);const actual=game.state(),expected=reference.state();for(const key of ['expansionProgress','connectedEnterprise']){delete actual[key];delete expected[key];}assert.deepEqual(actual,expected,'connected reward prestige/quality/meeting parity');}
 for(const seed of [entry,connectedSeed,work.save(),result.save()]){const gated=mount(seed),before=gated.state();assert.equal(gated.deferred(),true);gated.purchase('project_omniscience');gated.action('ascend');assert.deepEqual(gated.state(),before,'G1 through all connected steps');}
 const reset=mount(result.save());reset.action('hardReset');reset.timeout(2000);assert.equal(reset.saved(),null);
 console.log('PASS S7: exact S6-proof eligibility, offer/deferral, READ-only connection/no reward, three issued exceptions, bounded read proof, stale/duplicate/close/reload guards, modest reward, explicit establishment, retained service/connection and G1/reset.');
+}
+// S8: one bounded, deterministic five-write pilot with human approval for each change.
+{
+const emptyPilot={active:false,pending:0,completed:0,total:0};
+const connected={productDb:{connected:true,access:'read'},readUses:1,mappingBatch:{active:false,completed:true},writeUses:0,productWritePilot:emptyPilot};
+const seed={rawData:100,cleanData:25,pu:100,tu:100,rawDataRate:0,cleanDataRate:0,metricRate:0,
+ expansionProgress:{era:'connected_enterprise',transition:null},connectedEnterprise:connected,
+ schemaBatchReview:{introduced:true,active:false,batchSize:12000,autoMapped:11995,exceptionsTotal:5,exceptionsResolved:5,batchesCompleted:2},
+ aiReviewQueue:{pending:0,completed:10,wave:3},aiReviewDemand:{active:true,arrivalIntervalTicks:20,nextArrivalTick:20,totalArrived:6,totalCompleted:10}};
+const transition=step=>({era:'connected_enterprise',transition:{targetEra:'good_enough',step}});
+const economy=s=>Object.fromEntries(['rawData','cleanData','pu','tu','metricQuality','prestige','boardMeeting'].map(k=>[k,s[k]]));
+for(const era of ['analyst','automation','ai_pilot','acceleration','good_enough']) {
+ const game=mount({...seed,expansionProgress:{era,transition:null}}),before=game.state();
+ game.action('beginExpansionTransition','good_enough','write_access_offer');game.action('grantProductWrite','read_write');
+ assert.deepEqual(game.state(),before,'S8 denied in '+era);assert.equal(game.writeUpdate().step,null);
+}
+for(const patch of [{productDb:{connected:false,access:'none'}},{productDb:{connected:true,access:'read_write'}},{readUses:0},{mappingBatch:{active:true,completed:false}}]) {
+ const game=mount({...seed,connectedEnterprise:{...connected,...patch}}),before=game.state();
+ game.action('beginExpansionTransition','good_enough','write_access_offer');game.action('grantProductWrite','read_write');assert.deepEqual(game.state(),before);
+}
+for(const access of ['write','admin','delete','execute','READ_WRITE',true,{},null]) {
+ const game=mount({...seed,connectedEnterprise:{...connected,productDb:{connected:true,access}}});
+ assert.deepEqual(game.state().connectedEnterprise.productDb,{connected:false,access:'none'});
+ assert.equal(game.writeUpdate().step,null);
+}
+const legacy=mount({connectedEnterprise:{productDb:{connected:true,access:'read'}}});assert.equal(legacy.state().connectedEnterprise.productDb.access,'read');assert.deepEqual(legacy.state().connectedEnterprise.productWritePilot,emptyPilot);
+const fresh=mount();assert.equal(fresh.state().connectedEnterprise.writeUses,0);assert.deepEqual(fresh.state().connectedEnterprise.productWritePilot,emptyPilot);
+const openEnding=mount({...seed,isAscending:true});assert.equal(openEnding.state().expansionProgress.transition,null);openEnding.action('beginExpansionTransition','good_enough','write_access_offer');assert.equal(openEnding.state().expansionProgress.transition,null);
+const offer=mount(seed);assert.deepEqual(offer.state().expansionProgress,transition('write_access_offer'));assert.equal(offer.writeUpdate().step,'write_access_offer');assert.deepEqual(offer.state().connectedEnterprise,connected);
+const offered=offer.state();offer.action('beginExpansionTransition','good_enough','write_access_offer');offer.action('acknowledgeWriteResult');offer.action('establishExpansionEra','good_enough');assert.deepEqual(offer.state(),offered);
+assert.deepEqual(mount(offer.save()).state().expansionProgress,transition('write_access_offer'));
+for(const request of ['read','write','admin','delete','execute','READ_WRITE','',null,undefined]) {const before=offer.state();offer.action('grantProductWrite',request);assert.deepEqual(offer.state(),before);}
+const blockers=['pandasMode','sqlMode','spaghettiMode','modelMode','miningMode','flowMode','buzzwordMode','pdfMode','isAscending'].map(k=>({[k]:true})).concat([{coffeeBreak:{active:true}},{boardMeeting:{active:true}},{activeEvents:[{id:'storage_full_warning'}]},{blockingTask:{name:'Busy'}}]);
+for(const block of blockers){const game=mount({...offer.save(),...block}),before=game.state();game.action('grantProductWrite','read_write');assert.deepEqual(game.state(),before);}
+const beforeGrant=offer.state(),originalRecords=offer.writeRecords();offer.action('grantProductWrite','read_write');
+assert.deepEqual(offer.state().expansionProgress,transition('write_pilot_active'));assert.equal(offer.state().connectedEnterprise.productDb.access,'read_write');
+assert.deepEqual(offer.state().connectedEnterprise.productWritePilot,{active:true,pending:5,completed:0,total:5});assert.equal(offer.state().connectedEnterprise.writeUses,0);
+assert.deepEqual(economy(offer.state()),economy(beforeGrant));assert.deepEqual(offer.state().logs,beforeGrant.logs);assert.deepEqual(offer.writeRecords(),originalRecords,'grant causes no mutation');
+const once=offer.state();offer.action('grantProductWrite','read_write');offer.action('applyProductWrite',1);offer.action('acknowledgeWriteResult');assert.deepEqual(offer.state(),once);
+const granted=offer.save();assert.deepEqual(mount(granted).state().connectedEnterprise,granted.connectedEnterprise);
+const noAuto=mount(granted);ticks(noAuto,260);assert.equal(noAuto.state().connectedEnterprise.writeUses,0);assert.equal(noAuto.state().connectedEnterprise.productWritePilot.pending,5);assert.equal(noAuto.state().aiReviewQueue.pending,12,'SQL cap remains twelve during pilot');assert.deepEqual(noAuto.state().expansionProgress,transition('write_pilot_active'));
+for(const block of blockers){const game=mount({...granted,...block}),before=game.state();game.action('openProductWriteReview');assert.equal(game.writeAttempt(),null);assert.deepEqual(game.state(),before);}
+const game=mount(granted);game.action('openProductWriteReview');const first=game.writeAttempt();assert.equal(first.index,0);assert.deepEqual(game.state(),granted);assert.deepEqual(game.writeRecords(),originalRecords);
+game.action('openProductWriteReview');assert.deepEqual(game.writeAttempt(),first);assert.equal(game.writeAvailable(),false,'write review occupies the activity guard');
+game.action('openNextAIReview');assert.equal(game.queueAttempt(),null,'no conflicting SQL opening');
+game.action('closeProductWriteReview',first.id+1);game.action('applyProductWrite',first.id+1);assert.deepEqual(game.writeAttempt(),first);assert.equal(game.state().connectedEnterprise.writeUses,0);
+const reload=mount(game.save());assert.equal(reload.writeAttempt(),null);const untouched=reload.state();reload.action('applyProductWrite',first.id);assert.deepEqual(reload.state(),untouched);
+game.action('closeProductWriteReview',first.id);game.action('applyProductWrite',first.id);assert.equal(game.state().connectedEnterprise.writeUses,0);
+game.action('openProductWriteReview');const retry=game.writeAttempt();assert.notEqual(retry.id,first.id);game.action('applyProductWrite',first.id);assert.equal(game.state().connectedEnterprise.writeUses,0);
+const demandBefore=game.state().aiReviewDemand.totalArrived;ticks(game,20);assert.equal(game.state().aiReviewDemand.totalArrived,demandBefore+1);assert.deepEqual(game.writeAttempt(),retry,'background arrivals keep issued write valid');
+const meetingBlocks=mount({...granted,tick:300});meetingBlocks.action('openProductWriteReview');const blockedAttempt=meetingBlocks.writeAttempt();meetingBlocks.tick();assert.equal(meetingBlocks.state().boardMeeting.active,true);const beforeBlockedApply=meetingBlocks.state();meetingBlocks.action('applyProductWrite',blockedAttempt.id);assert.deepEqual(meetingBlocks.state(),beforeBlockedApply,'intervening meeting cannot authorize a write');assert.equal(meetingBlocks.writeAttempt(),null);
+const beforeApply=game.state();game.action('applyProductWrite',retry.id);const applied=game.state();assert.equal(game.writeAttempt(),null);assert.deepEqual(applied.connectedEnterprise.productWritePilot,{active:true,pending:4,completed:1,total:5});assert.equal(applied.connectedEnterprise.writeUses,1);assert.deepEqual(economy(applied),economy(beforeApply));assert.equal(applied.logs.length,beforeApply.logs.length+1);assert.match(applied.logs.at(-1).text,/Product DB update applied: P-1042.Width/);
+assert.deepEqual(game.writeRecords()[0],{record:'P-1042',field:'Width',value:45});assert.deepEqual(game.writeRecords().slice(1),originalRecords.slice(1));
+game.action('applyProductWrite',retry.id);assert.deepEqual(game.state(),applied);
+const resumed=mount(game.save());assert.equal(resumed.writeAttempt(),null);assert.equal(resumed.state().connectedEnterprise.writeUses,1);resumed.action('openProductWriteReview');assert.equal(resumed.writeAttempt().index,1);assert.deepEqual(resumed.writeRecords(),game.writeRecords());
+for(let i=1;i<5;i++) {const a=resumed.writeAttempt();assert.equal(a.index,i);const before=resumed.state();resumed.action('applyProductWrite',a.id);const paid=resumed.state();assert.equal(paid.connectedEnterprise.writeUses,i+1);assert.equal(paid.connectedEnterprise.productWritePilot.pending,4-i);assert.deepEqual(economy(paid),economy(before));resumed.action('applyProductWrite',a.id);assert.deepEqual(resumed.state(),paid);if(i<4)resumed.action('openProductWriteReview');}
+assert.deepEqual(resumed.state().expansionProgress,transition('write_pilot_success'));assert.deepEqual(resumed.state().connectedEnterprise.productWritePilot,{active:false,pending:0,completed:5,total:5});assert.equal(resumed.writeUpdate().step,'write_pilot_success');assert.deepEqual(resumed.writeRecords().map(r=>r.value),[45,'Navy','SUP-014',true,'Desk Accessories']);
+const success=resumed.state();resumed.action('openProductWriteReview');resumed.action('grantProductWrite','read_write');resumed.action('establishExpansionEra','good_enough');assert.deepEqual(resumed.state(),success);assert.deepEqual(mount(resumed.save()).state().expansionProgress,transition('write_pilot_success'));
+for(const block of blockers){const blocked=mount({...resumed.save(),...block}),before=blocked.state();blocked.action('acknowledgeWriteResult');assert.deepEqual(blocked.state(),before);}
+resumed.action('acknowledgeWriteResult');assert.deepEqual(resumed.state().expansionProgress,transition('approval_rollout_ready'));assert.deepEqual(resumed.state().connectedEnterprise,success.connectedEnterprise);assert.deepEqual(resumed.state().schemaBatchReview,seed.schemaBatchReview);
+const endpoint=resumed.state();resumed.action('acknowledgeWriteResult');resumed.action('openProductWriteReview');resumed.action('grantProductWrite','read_write');resumed.action('establishExpansionEra','good_enough');assert.deepEqual(resumed.state(),endpoint);
+const endpointReload=mount(resumed.save());assert.deepEqual(endpointReload.state().expansionProgress,transition('approval_rollout_ready'));ticks(endpointReload,20);assert.equal(endpointReload.state().aiReviewDemand.totalArrived,endpoint.aiReviewDemand.totalArrived+1);review(endpointReload);assert.equal(endpointReload.state().aiReviewDemand.totalCompleted,endpoint.aiReviewDemand.totalCompleted+1);
+for(const state of [offer.save(),granted,applied,success,endpoint]) {const g=mount(state),before=g.state();assert(g.deferred());g.purchase('project_omniscience');g.action('ascend');assert.deepEqual(g.state(),before);}
+const reset=mount(endpoint);reset.action('hardReset');reset.timeout(2000);assert.equal(reset.saved(),null);
+const badCounts=mount({...granted,connectedEnterprise:{...granted.connectedEnterprise,productWritePilot:{active:true,pending:99,completed:1,total:5},writeUses:-1}});assert.deepEqual(badCounts.state().connectedEnterprise.productWritePilot,emptyPilot);assert.equal(badCounts.state().connectedEnterprise.writeUses,0);assert.equal(badCounts.writeAvailable(),false);
+const mismatch=mount({...granted,connectedEnterprise:{...granted.connectedEnterprise,writeUses:3}});mismatch.action('openProductWriteReview');assert.equal(mismatch.writeAttempt(),null);
+console.log('PASS S8: exact S7 proof, bounded grant/no mutation or reward, five deterministic human-approved writes, issued/duplicate/stale/close/reload guards, persisted record projection/write proof, zero duplicate economics, explicit endpoint without establishment, background SQL and G1/reset.');
 }

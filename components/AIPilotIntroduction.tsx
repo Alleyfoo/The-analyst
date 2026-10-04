@@ -3,8 +3,8 @@ import { CheckCircle, Sparkles } from 'lucide-react';
 import { AIPilotStep, AIPilotFeedbackStep } from '../types';
 
 interface Props {
-  step: AIPilotFeedbackStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success';
-  onContinue: (step: AIPilotStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success') => void;
+  step: AIPilotFeedbackStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success';
+  onContinue: (step: AIPilotStep | 'continuous_demand_offer' | 'pressure_visible' | 'review_bottleneck_visible' | 'schema_introduction' | 'schema_first_result' | 'read_connection_offer' | 'connected_mapping_success' | 'write_access_offer' | 'write_pilot_success') => void;
   onLater: () => void;
 }
 
@@ -21,6 +21,8 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
   const schemaResult = step === 'schema_first_result';
   const connection = step === 'read_connection_offer';
   const connectedResult = step === 'connected_mapping_success';
+  const writeOffer = step === 'write_access_offer';
+  const writeResult = step === 'write_pilot_success';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <section role="dialog" aria-modal="true" aria-labelledby="pilot-introduction-title"
@@ -29,7 +31,7 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           {recognition ? <CheckCircle className="text-emerald-400" size={32} /> : <Sparkles className="text-blue-400" size={32} />}
           <div>
             <h2 id="pilot-introduction-title" className="text-xl font-bold text-slate-100">
-              {recognition ? 'AUTOMATION RECOGNIZED' : result ? 'PILOT RESULT' : expansion ? 'PILOT EXPANSION' : cleared ? 'INITIAL PILOT QUEUE CLEARED' : operational ? 'OPERATIONAL ROLLOUT' : turnaround ? 'TURNAROUND TARGET' : capacity ? 'REVIEW CAPACITY' : schema ? 'SCHEMA MAPPING PILOT' : schemaResult ? 'BATCH COMPLETE' : connection ? 'SOURCE CONTEXT' : connectedResult ? 'CONNECTED REVIEW RESULT' : 'ENTERPRISE AI PILOT'}
+              {recognition ? 'AUTOMATION RECOGNIZED' : result ? 'PILOT RESULT' : expansion ? 'PILOT EXPANSION' : cleared ? 'INITIAL PILOT QUEUE CLEARED' : operational ? 'OPERATIONAL ROLLOUT' : turnaround ? 'TURNAROUND TARGET' : capacity ? 'REVIEW CAPACITY' : schema ? 'SCHEMA MAPPING PILOT' : schemaResult ? 'BATCH COMPLETE' : connection ? 'SOURCE CONTEXT' : connectedResult ? 'CONNECTED REVIEW RESULT' : writeOffer ? 'WRITEBACK' : writeResult ? 'WRITE PILOT RESULT' : 'ENTERPRISE AI PILOT'}
             </h2>
             <p className="text-xs font-mono uppercase text-slate-500 tracking-wider">Management update</p>
           </div>
@@ -79,6 +81,21 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
               <p>ALLOWED: inspect schema definitions, example records and field metadata.</p>
               <p>NOT ALLOWED: create, update, delete or execute changes.</p>
             </div>
+          </> : writeOffer ? <>
+            <p>Connected context is reducing manual review, but accepted corrections are still being copied back into Product DB separately.</p>
+            <p>“The assistant already has the validated value. Could it prepare the update too?”</p>
+            <div className="border border-blue-800 rounded p-3 text-xs space-y-2">
+              <p className="font-bold text-blue-200">PRODUCT DB · CURRENT: READ</p>
+              <p>REQUESTED: READ + WRITE</p>
+              <p>WRITE SCOPE: Existing product attribute values only</p>
+              <p>REQUIRES: Human approval per change</p>
+              <p>NOT ALLOWED: Create · Delete · Schema · Permissions · Auto-execute</p>
+            </div>
+            <p>AI prepares the write → you approve that change → the write occurs.</p>
+          </> : writeResult ? <>
+            <p>Five validated corrections were applied through the connected workflow. Every change retained explicit analyst approval.</p>
+            <p>5 prepared · 5 approved · 5 written · 0 automatic writes</p>
+            <p>“That removes the copy-and-paste step.”</p>
           </> : connectedResult ? <>
             <p>Product DB context resolved two cases that previously required analyst review.</p>
             <p>20,000 fields · 19,997 automated · 3 analyst-reviewed · 0 source changes</p>
@@ -90,7 +107,7 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           </>}
         </div>
         <button onClick={() => onContinue(step)} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded transition-colors">
-          {recognition ? 'Acknowledge progress' : result ? 'Acknowledge pilot result' : expansion ? 'Acknowledge pilot expansion' : cleared ? 'Acknowledge queue result' : operational ? 'Acknowledge operational rollout' : turnaround ? 'Acknowledge turnaround target' : capacity ? 'Acknowledge review capacity' : schema ? 'Acknowledge schema pilot' : schemaResult ? 'Acknowledge batch result' : connection ? 'CONNECT READ ONLY' : connectedResult ? 'Acknowledge connected result' : 'Acknowledge pilot approval'}
+          {recognition ? 'Acknowledge progress' : result ? 'Acknowledge pilot result' : expansion ? 'Acknowledge pilot expansion' : cleared ? 'Acknowledge queue result' : operational ? 'Acknowledge operational rollout' : turnaround ? 'Acknowledge turnaround target' : capacity ? 'Acknowledge review capacity' : schema ? 'Acknowledge schema pilot' : schemaResult ? 'Acknowledge batch result' : connection ? 'CONNECT READ ONLY' : connectedResult ? 'Acknowledge connected result' : writeOffer ? 'GRANT BOUNDED WRITE' : writeResult ? 'Acknowledge write pilot result' : 'Acknowledge pilot approval'}
         </button>
         <button onClick={onLater} className="w-full mt-3 py-2 text-sm text-slate-400 hover:text-slate-200">Later</button>
       </section>

@@ -1,6 +1,6 @@
 # Existing extension boundaries
 
-This is a seam inventory for later second-act work, **not** an expansion design. Preserve baseline commit `1263845279e9afd65ac05a6a1ac809e9bc70ee3c` as the comparison point. S0 implements progression, S1 organisational introduction, S2 one assistive SQL trial, S3 finite reviews, G1 an ending boundary, S4 continuous SQL demand, S5 compressed routing/Acceleration establishment, S6 two schema exception batches, and S7 local read-only Product DB context. No outer wrapper exists.
+This is a seam inventory for later second-act work, **not** an expansion design. Preserve baseline commit `1263845279e9afd65ac05a6a1ac809e9bc70ee3c` as the comparison point. S0 implements progression, S1 organisational introduction, S2 one assistive SQL trial, S3 finite reviews, G1 an ending boundary, S4 continuous SQL demand, S5 compressed routing/Acceleration establishment, S6 two schema exception batches, S7 local read-only Product DB context, and S8 a bounded Product DB write pilot. No outer wrapper exists.
 
 | Existing seam | What it permits examining later | Boundary to preserve |
 | --- | --- | --- |
@@ -54,7 +54,7 @@ The existing issued schema attempt now distinguishes only S6 schema and S7 conne
 
 Success persists `connected_mapping_success`; explicit CONNECTED REVIEW RESULT acknowledgement alone establishes connected/null, retaining Product DB READ, read proof, S6 history and the existing SQL queue/schedule. `hasContinuousAIReviewDemand` continues 20-tick human-gated SQL through all exact S7 steps and established Connected Enterprise. Save/reload keeps authority/proof/result and rejects unfinished transient attempt callbacks; no automatic era establishment, repayment, disconnect or privilege upgrade. Workstation adds one real gameplay-backed Product DB status, not decorative systems or topology.
 
-This slice ends with useful READ access. There is no write-pressure prompt, write-capable action, WRITE/ADMIN state, source mutation, auto-execution, approval policy, connected propagation, errors or customer incidents. Later authority expansion requires a separately authorized work order, not reinterpretation of READ. G1/reset and original economics remain unchanged.
+S7 ended with useful READ access. S8 explicitly authorizes the bounded write pilot below; READ alone still grants no mutation authority. ADMIN, auto-execution, approval policy, connected propagation, errors and customer incidents remain absent. G1/reset and original economics remain unchanged.
 
 **G1 ending boundary:** `constants.ts::isAscensionDeferred` derives deferral from any non-analyst era or non-null transition. The engine guards OMNISCIENCE purchase before costs/flags/effects, and direct `ascend` calls unless an ending is already open. Workstation shares this predicate for the disabled/explained Ops and upgrade presentations. Original analyst/null purchase/ending/NG+ calculations remain unchanged; no new saved gate or ending-release mechanism exists. Later expansion ending work must explicitly authorize its own choice, rather than infer release from TU or queue completion.
 
@@ -63,3 +63,16 @@ An already-open original ending is retained, and automatic/manual transition sta
 The main interval assumes one global economy, one rival, one meeting schedule and one upgrade set. Inserting era-specific calculations throughout it would cross more baseline boundaries than an outer lifecycle seam. `isAscending` is an existing pause/ending gate, not a general campaign state. `prestige.level` measures accumulated production power, not chronological era.
 
 Before later work, retain source-based baseline documentation and explicitly decide whether quirks in [KNOWN_QUIRKS.md](KNOWN_QUIRKS.md) remain part of compatibility. No AI-provider, agent-service or second-act gameplay design is proposed here.
+
+
+## Bounded write seam (S8)
+
+`isWritePilotEligible`/`beginExpansionTransition` extend only established Connected Enterprise with actual S7 read/mapping proof into **good_enough/write_access_offer**. `AIPilotIntroduction` supplies opt-in WRITEBACK authority disclosure and result; engine-owned `grantProductWrite` requires exact connected READ/offer and existing activity guards. It grants only **read_write**: read context plus existing product attribute-value updates after individual human approval. Create/delete/schema/field/permission changes, self-approval, auto-execution and other systems remain outside authority. No generic IAM, external DB, backend or networking is added.
+
+`connectedEnterprise.productWritePilot` saves only active/pending/completed/total, alongside `writeUses`; see [STATE_MODEL](STATE_MODEL.md). Exactly five deterministic fictional corrections in `PRODUCT_WRITE_PROPOSALS` represent already analyst-validated work. `productWriteRecords` derives local attribute values from the persisted applied prefix. This is a finite simulated record projection, not an enterprise data model, editable record store or generic approval framework. Do not change/reorder these issued proposals casually across saves.
+
+`openProductWriteReview` issues a transient ID/current-index authority. `ProductWriteReview` is a small current/proposed evidence presentation with APPLY TO PRODUCT DB and Later. Opening/closing/reloading neither applies nor consumes. `applyProductWrite` validates authority, exact active transition, coherent queue, current index, issued ID and existing blockers; consumes the ID, then atomically advances counts/proof/derived attribute and writes one existing game-log entry. Duplicate/stale approvals cannot pay or mutate again. Writes give **zero economic rewards/costs**, avoiding repeated schema payment. The human click is the sole mutation trigger: no Approve All, timeout action, autonomous execution or approval threshold exists.
+
+A saved unapproved presentation discards only its transient attempt; reopen the same next correction. Saved approval resumes the next index; five completions expose deferrable WRITE PILOT RESULT. Acknowledgement stores **connected_enterprise / good_enough / approval_rollout_ready**, READ_WRITE retained, no active queue and human approval still mandatory. It does **not** establish Good Enough. SQL routing continues at 20 ticks/cap twelve during every S8 step/review; original human EXECUTE/rewards, S7 mapping/read proof, S6 history, manual mapping and G1/reset remain boundaries.
+
+The ordinary engine log is sufficient activity feedback for this slice, not the planned independent governance logger. Continuous write demand, approval delegation/automation, bad writes, conflicts, downstream/customer consequences, rollback, independent audit and Access Matrix require separate work orders. No governing design change was needed for S8.

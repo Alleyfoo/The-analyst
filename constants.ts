@@ -681,3 +681,12 @@ export const checkUpgradeVisibility = (state: GameState, upgrade: Upgrade): bool
   
   return false;
 };
+// Five deterministic, already analyst-validated local attribute corrections.
+// Applied Product DB values are this fixed proposal prefix up to pilot.completed.
+export const PRODUCT_WRITE_PROPOSALS = [
+  { record: 'P-1042', field: 'Width', current: '45 cm', proposed: 45 },
+  { record: 'P-1043', field: 'Colour', current: 'navy blue', proposed: 'Navy' },
+  { record: 'P-1044', field: 'SupplierCode', current: ' SUP-014 ', proposed: 'SUP-014' },
+  { record: 'P-1045', field: 'Active', current: 'yes', proposed: true },
+  { record: 'P-1046', field: 'Category', current: 'desk accessories', proposed: 'Desk Accessories' },
+] as const;
