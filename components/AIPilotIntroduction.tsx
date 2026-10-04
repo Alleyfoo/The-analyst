@@ -110,7 +110,7 @@ export const AIPilotIntroduction: React.FC<Props> = ({ step, onContinue, onLater
           </> : capacity ? <>
             <p>AI preparation time is no longer the primary constraint. Requests are spending more of their lifecycle waiting for final analyst review.</p>
             <p>“The workflow is fast. The approval step isn't.”</p>
-            <p>This establishes the Acceleration phase. Continuous routing and final human execution continue.</p>
+            <p>This establishes the Acceleration phase. Routine incoming SQL becomes automated; manual ad-hoc SQL remains available.</p>
           </> : schema ? <>
             <p>Routine field mappings are now being proposed automatically. Operations wants the analyst team to review only cases the system cannot resolve confidently.</p>
             <p>“No need to inspect the obvious ones. Just handle the exceptions.”</p>

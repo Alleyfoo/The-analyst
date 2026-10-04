@@ -40,6 +40,8 @@ interface Props {
   writeUpdate: { step: 'write_access_offer' | 'write_pilot_success' | null; available: boolean };
   productWriteAvailable: boolean;
   writeQueueUpdate: { step: 'approval_rollout_ready' | 'approval_bottleneck_visible' | null; available: boolean };
+  postGovernNewGameAvailable: boolean;
+  onGovernNewGame: () => void;
   expansionRoleAvailable: boolean;
   accessMatrixAvailable: boolean;
   onDecideRole: () => void;
@@ -92,7 +94,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, onOpenIncidentTrace, sourceRemediationAvailable, onOpenSourceRepair, executiveReviewAvailable, expansionEndingReady, onOpenExecutiveReview, expansionRoleAvailable, accessMatrixAvailable, onDecideRole, onReviewAccessMatrix }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable, writeUpdate, productWriteAvailable, onReviewProductWrite, writeQueueUpdate, productWriteQueueAvailable, onReviewNextWrite, writePolicyUpdate, policyTrialAvailable, onReviewPolicyTrial, writeScaleUpdate, sourceDriftUpdate, incidentTraceAvailable, onOpenIncidentTrace, sourceRemediationAvailable, onOpenSourceRepair, executiveReviewAvailable, expansionEndingReady, onOpenExecutiveReview, expansionRoleAvailable, accessMatrixAvailable, onDecideRole, onReviewAccessMatrix, postGovernNewGameAvailable, onGovernNewGame }) => {
   const writeVelocity = getProductWriteVelocity(state.connectedEnterprise.productWritePolicy.autoClasses.length);
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -189,7 +191,13 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
           </>}
         </div>
       )}
-      {state.aiReviewQueue.wave > 0 && (
+      {state.aiReviewDemand.automated && <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
+        <p className="font-bold text-blue-200">AI SQL ROUTING — AUTOMATED</p>
+        <p>Routine requests routed: {state.aiReviewDemand.automatedTotal.toLocaleString()}</p>
+        <p>Human reviews before automation: {state.aiReviewQueue.completed.toLocaleString()}</p>
+        <p>Manual Ad-Hoc SQL remains available.</p>
+      </div>}
+      {!state.aiReviewDemand.automated && state.aiReviewQueue.wave > 0 && (
         <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
           <p>AI SQL review queue — {state.aiReviewQueue.pending} pending · {state.aiReviewQueue.completed} completed · wave {state.aiReviewQueue.wave}</p>
           {aiReviewDemandActive && <p className="mt-1 text-blue-300">INCOMING ROUTING: ACTIVE · Next request: ~{Math.ceil(Math.max(0, state.aiReviewDemand.nextArrivalTick - state.tick) * TICK_RATE_MS / 1000)}s</p>}
@@ -244,13 +252,14 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
               <p>Containment: {state.connectedEnterprise.sourceDriftIncident.active ? 'QUARANTINED' : 'SOURCE CONTRACT UPDATED'} · Remediation: {state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' ? 'COMPLETE' : state.connectedEnterprise.sourceDriftRemediation.active ? 'IN PROGRESS' : 'NOT DEFINED'}</p>
               {state.connectedEnterprise.sourceDriftRemediation.step === 'remediation_complete' && <p>REPROCESSED: {state.connectedEnterprise.sourceDriftRemediation.resolvedProducts.toLocaleString()} · EXECUTIVE REVIEW: {state.connectedEnterprise.executiveReview.step === 'review_complete' ? 'COMPLETE' : state.connectedEnterprise.executiveReview.active ? 'IN PROGRESS' : 'READY'}</p>}
               {executiveReviewAvailable && <>
-                {expansionEndingReady && <p>FULL AUTOMATION ROLLOUT: ACTIVE · EXCEPTIONS: GOVERNED · EXPANSION END-STATE: READY · ASCENSION DEFERRED</p>}
+                {expansionEndingReady && <p>FULL AUTOMATION ROLLOUT: ACTIVE · EXCEPTIONS: GOVERNED · EXPANSION END-STATE: READY · {postGovernNewGameAvailable ? 'GOVERNANCE ROLE COMPLETE · NEW GAME+ AVAILABLE' : 'ASCENSION DEFERRED'}</p>}
                 {expansionRoleAvailable && <>
                   <p>AUTOMATION OPERATING MODEL: ACTIVE · EXECUTIVE REVIEW: COMPLETE · YOUR ROLE: UNDECIDED</p>
                   <button onClick={onDecideRole} className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 hover:bg-blue-900/30">DECIDE WHAT COMES NEXT</button>
                 </>}
                 {accessMatrixAvailable && <>
                   <p>GOVERN THE MACHINE · {state.expansionEnding.accessMatrix.stabilizedOnce ? 'SYSTEM STABLE — FOR NOW · ACCESS HEALTH: 100%' : 'ACCESS MODEL: IN PROGRESS'}</p>
+                  {postGovernNewGameAvailable && <button onClick={onGovernNewGame} className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 hover:bg-blue-900/30">LEAVE GOVERNANCE ROLE / NEW GAME+</button>}
                   <button onClick={onReviewAccessMatrix} className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 hover:bg-blue-900/30">REVIEW ACCESS MATRIX</button>
                 </>}
                 <button onClick={onOpenExecutiveReview} className="mt-2 w-full py-2 border border-blue-500 rounded text-blue-200 hover:bg-blue-900/30">
@@ -393,17 +402,17 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
                                  <InfinityIcon size={24} className="text-purple-400" />
                              </div>
                              <div>
-                                 <div className="text-purple-300 text-sm font-bold uppercase tracking-wider">{ascensionDeferred ? 'ASCENSION DEFERRED' : 'Ascension Available'}</div>
-                                 <div className="text-slate-300 text-xs">{ascensionDeferred ? 'ORGANISATIONAL TRANSFORMATION IN PROGRESS' : 'Singularity threshold reached. Reset simulation for permanent power.'}</div>
+                                 <div className="text-purple-300 text-sm font-bold uppercase tracking-wider">{postGovernNewGameAvailable ? 'GOVERNANCE ROLE COMPLETE' : ascensionDeferred ? 'ASCENSION DEFERRED' : 'Ascension Available'}</div>
+                                 <div className="text-slate-300 text-xs">{postGovernNewGameAvailable ? 'NEW GAME+ AVAILABLE' : ascensionDeferred ? 'ORGANISATIONAL TRANSFORMATION IN PROGRESS' : 'Singularity threshold reached. Reset simulation for permanent power.'}</div>
                              </div>
                          </div>
                          <button 
-                            disabled={ascensionDeferred}
+                            disabled={ascensionDeferred && !postGovernNewGameAvailable}
                             // Simulate buying the upgrade which triggers ascension
-                            onClick={() => onBuyUpgrade(UPGRADES.find(u => u.id === 'project_omniscience')!)}
+                            onClick={() => postGovernNewGameAvailable ? onGovernNewGame() : onBuyUpgrade(UPGRADES.find(u => u.id === 'project_omniscience')!)}
                             className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded shadow-lg transition-transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                          >
-                             {ascensionDeferred ? 'DEFERRED' : 'ASCEND'}
+                             {postGovernNewGameAvailable ? 'NEW GAME+' : ascensionDeferred ? 'DEFERRED' : 'ASCEND'}
                          </button>
                     </motion.div>
                 )}
@@ -643,7 +652,7 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
                                                         </span>
                                                     </div>
                                                     <p className="text-[10px] md:text-[11px] text-slate-500 mt-1 leading-tight">{u.description}</p>
-                                                    {isDeferred && <p className="text-[10px] text-purple-300 mt-1">ASCENSION DEFERRED — ORGANISATIONAL TRANSFORMATION IN PROGRESS</p>}
+                                                    {isDeferred && !postGovernNewGameAvailable && <p className="text-[10px] text-purple-300 mt-1">ASCENSION DEFERRED — ORGANISATIONAL TRANSFORMATION IN PROGRESS</p>}
                                                 </div>
                                                 {!isPurchased && (
                                                     <div className="flex flex-col items-end shrink-0 relative z-10">

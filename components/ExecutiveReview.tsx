@@ -60,7 +60,7 @@ export const ExecutiveReview: React.FC<Props> = ({ enterprise, endingReady, onPr
       {review.step === 'evidence_packet' ? <button onClick={onPresent} className="w-full py-3 rounded bg-indigo-600 hover:bg-indigo-500 text-white">PRESENT FINDINGS</button> :
         review.step === 'controls_review' ? <button onClick={onSubmitControls} className="w-full py-3 rounded bg-indigo-600 hover:bg-indigo-500 text-white">SUBMIT CONTROL RECOMMENDATIONS</button> :
         review.step === 'programme_decision' ? <button onClick={onAcknowledge} className="w-full py-3 rounded bg-indigo-600 hover:bg-indigo-500 text-white">ACKNOWLEDGE ORGANISATIONAL DECISION</button> : null}
-      <p className="mt-4 text-xs text-blue-200">Product DB policy retained · SQL remains human-executed · Routine Lightspeed flow continues</p>
+      <p className="mt-4 text-xs text-blue-200">Product DB policy retained · Manual Ad-Hoc SQL remains available · Routine Lightspeed flow continues</p>
       <button onClick={onLater} className="w-full mt-3 py-2 text-sm text-slate-400 hover:text-slate-200">Later</button>
     </section>
   </div>;

@@ -55,10 +55,16 @@ const hasAcceleratedAIReviewDemand = (state: GameState) =>
     (state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition?.targetEra === 'acceleration' &&
      (state.expansionProgress.transition.step === 'accelerated_routing_active' || state.expansionProgress.transition.step === 'review_bottleneck_visible'));
 
-const hasContinuousAIReviewDemand = (state: GameState) => state.aiReviewDemand.active &&
+const hasContinuousAIReviewDemand = (state: GameState) => !state.aiReviewDemand.automated && state.aiReviewDemand.active &&
     state.aiReviewQueue.wave === 3 && (hasAcceleratedAIReviewDemand(state) || (state.expansionProgress.era === 'ai_pilot' &&
     state.expansionProgress.transition?.targetEra === 'acceleration' &&
     (state.expansionProgress.transition.step === 'continuous_demand_active' || state.expansionProgress.transition.step === 'pressure_visible')));
+
+const isAutomatedSQLPhase = (state: GameState) => state.expansionProgress.era !== 'ai_pilot' && hasAcceleratedAIReviewDemand(state);
+const hasAutomatedSQLDemand = (state: GameState) => isAutomatedSQLPhase(state) && state.aiReviewQueue.wave === 3 &&
+    state.aiReviewDemand.automated && !state.aiReviewDemand.active && state.aiReviewQueue.pending === 0 &&
+    state.aiReviewDemand.arrivalIntervalTicks === AI_REVIEW_ACCELERATED_INTERVAL_TICKS &&
+    Number.isSafeInteger(state.aiReviewDemand.automatedTotal) && state.aiReviewDemand.automatedTotal >= 0;
 
 const continuousDemandProof = (state: GameState) => {
     if (!hasContinuousAIReviewDemand(state)) return state.expansionProgress;
@@ -76,6 +82,11 @@ const continuousDemandProof = (state: GameState) => {
 
 // One scheduled opportunity per game interval; a full queue simply waits for the next.
 const arriveAIReview = (prev: GameState, tick: number): Partial<GameState> => {
+    if (!prev.isAscending && hasAutomatedSQLDemand(prev) && tick >= prev.aiReviewDemand.nextArrivalTick) {
+        if (!Number.isSafeInteger(prev.aiReviewDemand.automatedTotal + 1) || !Number.isSafeInteger(tick + AI_REVIEW_ACCELERATED_INTERVAL_TICKS)) return {};
+        return { aiReviewDemand: { ...prev.aiReviewDemand, automatedTotal: prev.aiReviewDemand.automatedTotal + 1,
+          nextArrivalTick: tick + AI_REVIEW_ACCELERATED_INTERVAL_TICKS } };
+    }
     if (prev.isAscending || !hasContinuousAIReviewDemand(prev) || tick < prev.aiReviewDemand.nextArrivalTick) return {};
     const added = prev.aiReviewQueue.pending < AI_REVIEW_QUEUE_CAP ? 1 : 0;
     const next = { ...prev, aiReviewQueue: { ...prev.aiReviewQueue, pending: prev.aiReviewQueue.pending + added },
@@ -233,6 +244,10 @@ const isExpansionEndingValid = (ending: ExpansionEndingState) => {
       matrix.cells.every(level => Number.isInteger(level) && level >= 0 && level <= 3) &&
       matrix.stabilizedOnce === isAccessMatrixSolved(matrix.cells);
 };
+const canRebootExpansion = (state: GameState) => isExpansionEndingReady(state) && isExpansionEndingValid(state.expansionEnding) &&
+    (state.expansionEnding.route === null || (state.expansionEnding.route === 'govern_machine' &&
+      state.expansionEnding.accessMatrix.stabilizedOnce && isAccessMatrixSolved(state.expansionEnding.accessMatrix.cells)));
+
 const hydrateExpansionEnding = (saved: any): ExpansionEndingState => {
     if (!saved || !isExpansionEndingValid(saved)) return { route: null, accessMatrix: { ...INITIAL_STATE.expansionEnding.accessMatrix, cells: [] } };
     return { route: saved.route, accessMatrix: { active: saved.accessMatrix.active, cells: [...saved.accessMatrix.cells],
@@ -424,6 +439,8 @@ const hydrateState = (parsed: any): GameState => {
         aiReviewDemand: {
             ...INITIAL_STATE.aiReviewDemand,
             active: parsed.aiReviewDemand?.active === true,
+            automated: false,
+            automatedTotal: Number.isSafeInteger(parsed.aiReviewDemand?.automatedTotal) && parsed.aiReviewDemand.automatedTotal >= 0 ? parsed.aiReviewDemand.automatedTotal : 0,
             arrivalIntervalTicks: Number.isSafeInteger(parsed.aiReviewDemand?.arrivalIntervalTicks) && parsed.aiReviewDemand.arrivalIntervalTicks > 0
                 ? parsed.aiReviewDemand.arrivalIntervalTicks : INITIAL_STATE.aiReviewDemand.arrivalIntervalTicks,
             ...Object.fromEntries(['nextArrivalTick', 'totalArrived', 'totalCompleted', 'acceleratedArrivals', 'acceleratedReviews', 'acceleratedPeakPending'].map(key => [key,
@@ -462,6 +479,26 @@ const hydrateState = (parsed: any): GameState => {
         coffeeBreak: { ...INITIAL_STATE.coffeeBreak, ...(parsed.coffeeBreak || {}) },
         lastCoffeeTick: parsed.lastCoffeeTick || -9999,
     };
+
+    // P1 migrates only coherent old wave-3 workload in an already established later phase.
+    const savedDemand = parsed.aiReviewDemand;
+    const savedQueue = parsed.aiReviewQueue;
+    const coherentSQL = isAutomatedSQLPhase(state) && savedQueue?.wave === 3 &&
+      Number.isSafeInteger(savedQueue.pending) && savedQueue.pending >= 0 && savedQueue.pending <= AI_REVIEW_QUEUE_CAP &&
+      Number.isSafeInteger(savedQueue.completed) && savedQueue.completed >= 0 && savedQueue.completed === savedDemand?.totalCompleted &&
+      savedDemand.arrivalIntervalTicks === AI_REVIEW_ACCELERATED_INTERVAL_TICKS &&
+      ['nextArrivalTick', 'totalArrived', 'totalCompleted', 'acceleratedArrivals', 'acceleratedReviews', 'acceleratedPeakPending'].every(key =>
+        Number.isSafeInteger(savedDemand[key]) && savedDemand[key] >= 0) &&
+      Number.isSafeInteger(state.tick) && state.tick >= 0 && Number.isSafeInteger(state.tick + AI_REVIEW_ACCELERATED_INTERVAL_TICKS);
+    const savedAutomated = coherentSQL && savedDemand.automated === true && savedDemand.active === false && savedQueue.pending === 0 &&
+      Number.isSafeInteger(savedDemand.automatedTotal) && savedDemand.automatedTotal >= 0;
+    const legacySQL = coherentSQL && savedDemand.active === true && (savedDemand.automated === undefined || savedDemand.automated === false) &&
+      (savedDemand.automatedTotal === undefined || (Number.isSafeInteger(savedDemand.automatedTotal) && savedDemand.automatedTotal >= 0));
+    if (savedAutomated || legacySQL) {
+      state.aiReviewDemand = { ...state.aiReviewDemand, active: false, automated: true,
+        nextArrivalTick: savedAutomated ? state.aiReviewDemand.nextArrivalTick : state.tick + AI_REVIEW_ACCELERATED_INTERVAL_TICKS };
+      state.aiReviewQueue = { ...state.aiReviewQueue, pending: 0 };
+    }
 
     // S14 containment/backfill must retain a coherent semantic approval and prior causal proof.
     const incident = state.connectedEnterprise.sourceDriftIncident;
@@ -1105,7 +1142,10 @@ export const useGameEngine = () => {
           acceleratedArrivals: 0, acceleratedReviews: 0, acceleratedPeakPending: prev.aiReviewQueue.pending },
           expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'acceleration', step: 'accelerated_routing_active' } } };
       }
-      return { ...prev, expansionProgress: { ...prev.expansionProgress, era: 'acceleration', transition: null } };
+      return { ...prev, aiReviewQueue: { ...prev.aiReviewQueue, pending: 0 },
+        aiReviewDemand: { ...prev.aiReviewDemand, active: false, automated: true,
+          nextArrivalTick: prev.tick + AI_REVIEW_ACCELERATED_INTERVAL_TICKS },
+        expansionProgress: { ...prev.expansionProgress, era: 'acceleration', transition: null } };
     });
   };
 
@@ -1492,7 +1532,7 @@ export const useGameEngine = () => {
   const rebootExpansionNewGame = (confirmation: string) => {
     const current = stateRef.current;
     if (confirmation !== 'reboot' || expansionResetPending.current || !isExpansionEndingReady(current) ||
-      !canPresentPilotIntroduction(current) || !isExpansionEndingValid(current.expansionEnding) || current.expansionEnding.route !== null) return;
+      !canPresentPilotIntroduction(current) || !canRebootExpansion(current)) return;
     const bonus = Math.max(1, Math.floor((Math.log10(Math.max(1, current.pu)) + current.tu) / 10));
     const level = current.prestige.level + bonus;
     const currency = current.prestige.currency + bonus;
@@ -1501,7 +1541,7 @@ export const useGameEngine = () => {
     setIsRebooting(true);
     setTimeout(() => {
       // Keep this reset separate from the deferred Act I ascend action and its formula.
-      if (!isExpansionEndingReady(stateRef.current) || stateRef.current.expansionEnding.route !== null) {
+      if (!canRebootExpansion(stateRef.current)) {
         expansionResetPending.current = false; setIsRebooting(false); return;
       }
       const timestamp = Date.now();
@@ -2073,6 +2113,7 @@ export const useGameEngine = () => {
     productWriteProposal: productWriteAttempt ? (productWriteAttempt.kind === 'queue'
       ? queueWriteProposal(state, productWriteAttempt.index) : productWriteAttempt.kind === 'policy_trial'
         ? getPolicyTrialProductWriteProposal(productWriteAttempt.index) : PRODUCT_WRITE_PROPOSALS[productWriteAttempt.index]) : null,
+    expansionNewGameAvailable: canRebootExpansion(state) && canPresentPilotIntroduction(state),
     expansionRoleAvailable: isExpansionEndingReady(state) && state.expansionEnding.route === null && canPresentPilotIntroduction(state),
     accessMatrixAvailable: isExpansionEndingReady(state) && isExpansionEndingValid(state.expansionEnding) && state.expansionEnding.route === 'govern_machine' && canPresentPilotIntroduction(state),
     executiveReviewAvailable: hasExecutiveReviewEvidence(state) && canPresentPilotIntroduction(state),

@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { ExpansionEndingState } from '../types';
 import { ACCESS_IDENTITIES, ACCESS_SYSTEMS, ACCESS_LEVELS, ACCESS_TARGET, ACCESS_DEPENDENCIES, getAccessMatrixHealth } from '../constants';
 
-interface Props { matrix: ExpansionEndingState['accessMatrix']; onCycle: (index: number) => void; onLater: () => void }
+interface Props { matrix: ExpansionEndingState['accessMatrix']; onCycle: (index: number) => void; onLater: () => void; onNewGame?: () => void }
 const cellName = (index: number) => `${ACCESS_IDENTITIES[Math.floor(index / 4)]} / ${ACCESS_SYSTEMS[index % 4]}`;
 
-export const AccessMatrix: React.FC<Props> = ({ matrix, onCycle, onLater }) => {
+export const AccessMatrix: React.FC<Props> = ({ matrix, onCycle, onLater, onNewGame }) => {
   const [lastChanged, setLastChanged] = useState<number | null>(null);
   const health = getAccessMatrixHealth(matrix.cells);
   const mismatches = matrix.cells.filter((level, index) => level !== ACCESS_TARGET[index]).length;
@@ -34,6 +34,7 @@ export const AccessMatrix: React.FC<Props> = ({ matrix, onCycle, onLater }) => {
         <p className="font-bold text-blue-200">SYSTEM STABLE — FOR NOW</p>
         <p>FULL AUTOMATION: ACTIVE · ACCESS MODEL: STABILIZED · GOVERNANCE OWNER: ANALYST</p>
         <p>NEXT ACCESS REVIEW: INEVITABLE</p>
+        {onNewGame && <button onClick={onNewGame} className="w-full py-3 rounded bg-indigo-600 hover:bg-indigo-500 text-white">LEAVE GOVERNANCE ROLE / NEW GAME+</button>}
       </div>}
       <p className="mt-4 text-xs text-slate-400">A simplified corporate-authority puzzle, not IAM training. Routine company work continues.</p>
       <button onClick={onLater} className="w-full mt-3 py-2 text-sm text-slate-400 hover:text-slate-200">Close</button>

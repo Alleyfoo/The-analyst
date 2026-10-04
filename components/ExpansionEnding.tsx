@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 
 interface Props {
+  rebootOnly?: boolean;
   onGovern: () => void;
   onReboot: () => void;
   onLater: () => void;
 }
 
-export const ExpansionEnding: React.FC<Props> = ({ onGovern, onReboot, onLater }) => {
-  const [choice, setChoice] = useState<null | 'govern' | 'reboot'>(null);
+export const ExpansionEnding: React.FC<Props> = ({ rebootOnly = false, onGovern, onReboot, onLater }) => {
+  const [choice, setChoice] = useState<null | 'govern' | 'reboot'>(rebootOnly ? 'reboot' : null);
   const button = 'w-full py-3 rounded bg-indigo-600 hover:bg-indigo-500 text-white';
   return <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
     <section role="dialog" aria-modal="true" aria-labelledby="role-title" className="bg-slate-900 border border-blue-700/50 rounded-lg shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
@@ -30,7 +31,7 @@ export const ExpansionEnding: React.FC<Props> = ({ onGovern, onReboot, onLater }
       </> : <div className="my-5 space-y-4 text-sm text-slate-300">
         {choice === 'govern' ? <><p>You will own the access model going forward. Full Automation Rollout and governed exceptions continue.</p><p>This role starts a permission puzzle. It does not change your existing Product DB policy.</p><button className={button} onClick={onGovern}>ACCEPT GOVERNANCE ROLE</button></> :
           <><p>The governance role will be left behind. Current run will reset. Neural Link will increase by at least one.</p><p>Greater capability means the next run reaches automation sooner. The story's mandatory beats still remain.</p><button className={button} onClick={onReboot}>REBOOT</button></>}
-        <button onClick={() => setChoice(null)} className="w-full py-2 border border-slate-600 rounded">GO BACK</button>
+        <button onClick={() => rebootOnly ? onLater() : setChoice(null)} className="w-full py-2 border border-slate-600 rounded">GO BACK</button>
       </div>}
       <button onClick={onLater} className="w-full py-2 text-sm text-slate-400 hover:text-slate-200">Later</button>
     </section>
