@@ -17,6 +17,22 @@ export const CLEAN_HEADERS = [
   'X', 'Profit', 'ErrorID', 'Temperature'
 ];
 
+// Fictional, immutable read context for the existing mapping vocabulary; no source writes.
+export const PRODUCT_DB_FIELD_CONTEXT = [
+  { type: 'identifier', description: 'Stable user identifier', examples: '1042, 1043' },
+  { type: 'decimal', description: 'Revenue amount', examples: '149.50, 220.00' },
+  { type: 'text', description: 'Customer display name', examples: 'Northwind Parts, Acme Supplies' },
+  { type: 'integer', description: 'Source row index', examples: '0, 1, 2' },
+  { type: 'text', description: 'Contact email address', examples: 'buyer@example.test' },
+  { type: 'boolean', description: 'Active record indicator', examples: 'true, false' },
+  { type: 'text', description: 'Internal notes', examples: 'Seasonal account' },
+  { type: 'timestamp', description: 'Record timestamp', examples: '2026-01-15T09:00:00Z' },
+  { type: 'decimal', description: 'Horizontal coordinate', examples: '12.5, 18.0' },
+  { type: 'decimal', description: 'Profit amount', examples: '42.00, -8.50' },
+  { type: 'identifier', description: 'Error identifier', examples: '404, 500' },
+  { type: 'decimal', description: 'Temperature in Celsius', examples: '18.5, 22.0' },
+];
+
 // Gameplay ending availability comes only from persisted expansion authority.
 export const isAscensionDeferred = (state: GameState): boolean =>
     state.expansionProgress.era !== 'analyst' || state.expansionProgress.transition !== null;

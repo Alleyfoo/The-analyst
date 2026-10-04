@@ -19,7 +19,10 @@ const isSQLPilotReady = (state: GameState) =>
     state.expansionProgress.transition.step === 'pilot_ready';
 
 const hasAcceleratedAIReviewDemand = (state: GameState) =>
-    (state.expansionProgress.era === 'acceleration' && state.expansionProgress.transition === null) ||
+    (state.expansionProgress.era === 'acceleration' && (state.expansionProgress.transition === null ||
+      (state.expansionProgress.transition.targetEra === 'connected_enterprise' &&
+       ['read_connection_offer', 'product_db_read_connected', 'connected_mapping_success'].includes(state.expansionProgress.transition.step)))) ||
+    (state.expansionProgress.era === 'connected_enterprise' && state.expansionProgress.transition === null) ||
     (state.expansionProgress.era === 'ai_pilot' && state.expansionProgress.transition?.targetEra === 'acceleration' &&
      (state.expansionProgress.transition.step === 'accelerated_routing_active' || state.expansionProgress.transition.step === 'review_bottleneck_visible'));
 
@@ -86,7 +89,12 @@ const isSchemaBatchActive = (state: GameState) => isSchemaBatchEligible(state) &
     ((state.schemaBatchReview.batchesCompleted === 0 && state.schemaBatchReview.batchSize === 2400 && state.schemaBatchReview.autoMapped === 2395) ||
      (state.schemaBatchReview.batchesCompleted === 1 && state.schemaBatchReview.batchSize === 12000 && state.schemaBatchReview.autoMapped === 11995));
 
-type SchemaBatchAttempt = { id: number; fieldIds: number[]; batchesCompleted: number };
+const isConnectedMappingActive = (state: GameState) => state.expansionProgress.era === 'acceleration' &&
+    state.expansionProgress.transition?.targetEra === 'connected_enterprise' && state.expansionProgress.transition.step === 'product_db_read_connected' &&
+    state.connectedEnterprise.productDb.connected && state.connectedEnterprise.productDb.access === 'read' &&
+    state.connectedEnterprise.mappingBatch.active && !state.connectedEnterprise.mappingBatch.completed;
+
+type SchemaBatchAttempt = { id: number; kind: 'schema' | 'connected'; fieldIds: number[]; batchesCompleted: number };
 
 const hydrateState = (parsed: any): GameState => {
     const savedProgress = parsed.expansionProgress;
@@ -95,6 +103,13 @@ const hydrateState = (parsed: any): GameState => {
     const state: GameState = {
         ...INITIAL_STATE,
         ...parsed,
+        connectedEnterprise: {
+            productDb: { connected: parsed.connectedEnterprise?.productDb?.connected === true && parsed.connectedEnterprise.productDb.access === 'read',
+                access: parsed.connectedEnterprise?.productDb?.connected === true && parsed.connectedEnterprise.productDb.access === 'read' ? 'read' : 'none' },
+            readUses: Number.isSafeInteger(parsed.connectedEnterprise?.readUses) && parsed.connectedEnterprise.readUses >= 0 ? parsed.connectedEnterprise.readUses : 0,
+            mappingBatch: { active: parsed.connectedEnterprise?.mappingBatch?.active === true && parsed.connectedEnterprise.mappingBatch.completed !== true,
+                completed: parsed.connectedEnterprise?.mappingBatch?.completed === true },
+        },
         schemaBatchReview: {
             ...INITIAL_STATE.schemaBatchReview,
             introduced: parsed.schemaBatchReview?.introduced === true,
@@ -640,6 +655,8 @@ export const useGameEngine = () => {
       if (targetEra === 'acceleration' && (prev.expansionProgress.era !== 'ai_pilot' ||
           step !== 'continuous_demand_offer' || prev.aiReviewQueue.wave !== 2 ||
           prev.aiReviewQueue.pending !== 0 || prev.aiReviewQueue.completed !== 6 || prev.aiReviewDemand.active)) return prev;
+      if (targetEra === 'connected_enterprise' && (prev.expansionProgress.era !== 'acceleration' ||
+          prev.schemaBatchReview.batchesCompleted < 2 || step !== 'read_connection_offer')) return prev;
       return {
         ...prev,
         expansionProgress: { ...prev.expansionProgress, transition: { targetEra, step } },
@@ -651,7 +668,7 @@ export const useGameEngine = () => {
     setState(prev => {
       if (!isExpansionEra(targetEra)) return prev;
       // AI establishment belongs exclusively to the acknowledged first-queue result below.
-      if (targetEra === 'ai_pilot' || targetEra === 'acceleration') return prev;
+      if (targetEra === 'ai_pilot' || targetEra === 'acceleration' || targetEra === 'connected_enterprise') return prev;
       if (prev.expansionProgress.transition?.targetEra !== targetEra) return prev;
       return {
         ...prev,
@@ -674,6 +691,12 @@ export const useGameEngine = () => {
       beginExpansionTransition('acceleration', 'continuous_demand_offer');
     }
   }, [state.isAscending, state.expansionProgress, state.aiReviewQueue, state.aiReviewDemand.active, beginExpansionTransition]);
+
+  useEffect(() => {
+    if (!state.isAscending && state.expansionProgress.era === 'acceleration' && state.expansionProgress.transition === null && state.schemaBatchReview.batchesCompleted >= 2) {
+      beginExpansionTransition('connected_enterprise', 'read_connection_offer');
+    }
+  }, [state.isAscending, state.expansionProgress, state.schemaBatchReview.batchesCompleted, beginExpansionTransition]);
 
   const pendingPilot = state.expansionProgress.transition;
   const pilotStep = pendingPilot?.targetEra === 'ai_pilot'
@@ -764,13 +787,15 @@ export const useGameEngine = () => {
 
   const openSchemaBatchReview = () => {
     const current = stateRef.current;
-    if (!isSchemaBatchActive(current) || current.rawData < 20 || !canPresentPilotIntroduction(current) || schemaBatchAttemptRef.current) return;
-    const attempt = { id: ++schemaBatchSequence.current, batchesCompleted: current.schemaBatchReview.batchesCompleted,
-      fieldIds: Array.from({ length: RAW_HEADERS.length }, (_, i) => i).sort(() => Math.random() - 0.5).slice(0, 5) };
+    const connected = isConnectedMappingActive(current);
+    if ((!connected && !isSchemaBatchActive(current)) || current.rawData < 20 || !canPresentPilotIntroduction(current) || schemaBatchAttemptRef.current) return;
+    const attempt: SchemaBatchAttempt = { id: ++schemaBatchSequence.current, kind: connected ? 'connected' : 'schema', batchesCompleted: current.schemaBatchReview.batchesCompleted,
+      fieldIds: Array.from({ length: RAW_HEADERS.length }, (_, i) => i).sort(() => Math.random() - 0.5).slice(0, connected ? 3 : 5) };
     schemaBatchAttemptRef.current = attempt;
     setSchemaBatchAttempt(attempt);
-    setState(prev => isSchemaBatchActive(prev) && canPresentPilotIntroduction(prev) && prev.rawData >= 20 &&
-      prev.schemaBatchReview.batchesCompleted === attempt.batchesCompleted ? { ...prev, pandasMode: true } : prev);
+    setState(prev => (attempt.kind === 'connected' ? isConnectedMappingActive(prev) : isSchemaBatchActive(prev)) && canPresentPilotIntroduction(prev) && prev.rawData >= 20 &&
+      prev.schemaBatchReview.batchesCompleted === attempt.batchesCompleted ? { ...prev, pandasMode: true,
+        ...(connected ? { connectedEnterprise: { ...prev.connectedEnterprise, readUses: Math.max(1, prev.connectedEnterprise.readUses) } } : {}) } : prev);
   };
 
   const closeSchemaBatchReview = (attemptId: number) => {
@@ -784,15 +809,42 @@ export const useGameEngine = () => {
     // Capture issued authority before the presentation closes and clears its transient ref.
     const attempt = schemaBatchAttemptRef.current;
     setState(prev => {
-      if (isRebooting || prev.isAscending || !isSchemaBatchActive(prev) || !prev.pandasMode || !attempt || attempt.id !== attemptId ||
+      if (isRebooting || prev.isAscending || !attempt || !(attempt.kind === 'connected' ? isConnectedMappingActive(prev) : isSchemaBatchActive(prev)) || !prev.pandasMode || attempt.id !== attemptId ||
           attempt.batchesCompleted !== prev.schemaBatchReview.batchesCompleted || !Number.isSafeInteger(mistakes) || mistakes < 0 ||
-          !Array.isArray(mappings) || mappings.length !== 5 || new Set(mappings.map(pair => pair?.rawId)).size !== 5 ||
+          !Array.isArray(mappings) || mappings.length !== attempt.fieldIds.length || new Set(mappings.map(pair => pair?.rawId)).size !== attempt.fieldIds.length ||
           !mappings.every(pair => pair && pair.rawId === pair.cleanId && attempt.fieldIds.includes(pair.rawId)) || prev.rawData < 20) return prev;
       const qualityBonus = Math.max(0.01, 0.05 - mistakes * 0.01);
       return { ...prev, rawData: prev.rawData - 20, cleanData: prev.cleanData + 50 * (1 + prev.prestige.level * 0.1),
         metricQuality: Math.min(1.0, prev.metricQuality + qualityBonus),
         logs: [...prev.logs, { id: Date.now(), text: `Schema Mapping Complete. Quality +${(qualityBonus * 100).toFixed(0)}%.`, type: 'success', timestamp: Date.now() }],
-        schemaBatchReview: { ...prev.schemaBatchReview, active: false, exceptionsResolved: 5, batchesCompleted: prev.schemaBatchReview.batchesCompleted + 1 } };
+        ...(attempt.kind === 'connected' ? {
+          connectedEnterprise: { ...prev.connectedEnterprise, mappingBatch: { active: false, completed: true } },
+          expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'connected_enterprise', step: 'connected_mapping_success' } },
+        } : { schemaBatchReview: { ...prev.schemaBatchReview, active: false, exceptionsResolved: 5, batchesCompleted: prev.schemaBatchReview.batchesCompleted + 1 } }) };
+    });
+  };
+
+  const connectedFeedbackStep = (snapshot: GameState): 'read_connection_offer' | 'connected_mapping_success' | null => {
+    const transition = snapshot.expansionProgress.transition;
+    if (snapshot.expansionProgress.era !== 'acceleration' || transition?.targetEra !== 'connected_enterprise') return null;
+    if (transition.step === 'read_connection_offer' && !snapshot.connectedEnterprise.productDb.connected) return 'read_connection_offer';
+    return transition.step === 'connected_mapping_success' && snapshot.connectedEnterprise.mappingBatch.completed &&
+      snapshot.connectedEnterprise.productDb.connected && snapshot.connectedEnterprise.productDb.access === 'read' && snapshot.connectedEnterprise.readUses >= 1
+        ? 'connected_mapping_success' : null;
+  };
+
+  const connectProductDb = (requestedAccess: string) => {
+    setState(prev => {
+      if (requestedAccess !== 'read' || !canPresentPilotIntroduction(prev) || connectedFeedbackStep(prev) !== 'read_connection_offer') return prev;
+      return { ...prev, connectedEnterprise: { ...prev.connectedEnterprise, productDb: { connected: true, access: 'read' }, mappingBatch: { active: true, completed: false } },
+        expansionProgress: { ...prev.expansionProgress, transition: { targetEra: 'connected_enterprise', step: 'product_db_read_connected' } } };
+    });
+  };
+
+  const acknowledgeConnectedResult = () => {
+    setState(prev => {
+      if (!canPresentPilotIntroduction(prev) || connectedFeedbackStep(prev) !== 'connected_mapping_success') return prev;
+      return { ...prev, expansionProgress: { ...prev.expansionProgress, era: 'connected_enterprise', transition: null } };
     });
   };
 
@@ -1348,6 +1400,9 @@ export const useGameEngine = () => {
     schemaBatchAttempt,
     schemaUpdate: { step: schemaFeedbackStep(state), available: canPresentPilotIntroduction(state) },
     schemaBatchAvailable: isSchemaBatchActive(state) && state.rawData >= 20 && canPresentPilotIntroduction(state),
+    connectedUpdate: { step: connectedFeedbackStep(state), available: canPresentPilotIntroduction(state) },
+    connectedMappingOffered: isConnectedMappingActive(state),
+    connectedMappingAvailable: isConnectedMappingActive(state) && state.rawData >= 20 && canPresentPilotIntroduction(state),
     operationalRollout: { offered: state.expansionProgress.era === 'ai_pilot' &&
         state.expansionProgress.transition?.targetEra === 'acceleration' && state.expansionProgress.transition.step === 'continuous_demand_offer',
         available: canPresentPilotIntroduction(state) },
@@ -1357,6 +1412,7 @@ export const useGameEngine = () => {
       openNextAIReview, completeAIReviewQuery,
       acknowledgeOperationalRollout, acknowledgeAccelerationUpdate,
       acknowledgeSchemaUpdate, openSchemaBatchReview, closeSchemaBatchReview, completeSchemaBatchReview,
+      connectProductDb, acknowledgeConnectedResult,
       manualClean, manualAnalyze, purchaseUpgrade, dismissEvent,
       toggleSpaghettiMode, togglePandasMode, toggleSQLMode, toggleModelMode, toggleMiningMode, toggleFlowMode, toggleBuzzwordMode, togglePDFMode,
       cleanSpaghettiStrand, completePandasLevel, completeSQLQuery, completeModelTraining, completeMiningLevel, completeFlowBatch, completeBuzzwordBattle, completePDFBatch,

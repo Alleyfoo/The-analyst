@@ -34,6 +34,9 @@ interface Props {
   schemaUpdate: { step: 'schema_introduction' | 'schema_first_result' | null; available: boolean };
   schemaBatchAvailable: boolean;
   onReviewSchemaBatch: () => void;
+  connectedUpdate: { step: 'read_connection_offer' | 'connected_mapping_success' | null; available: boolean };
+  connectedMappingOffered: boolean;
+  connectedMappingAvailable: boolean;
 }
 
 const TerminalLine: React.FC<{ log: LogMessage }> = ({ log }) => {
@@ -67,7 +70,7 @@ const FloatingText = ({ x, y, text, color, onComplete }: { x: number, y: number,
     );
 };
 
-export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch }) => {
+export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAnalyze, onBuyUpgrade, onToggleSpaghetti, onTogglePandas, onToggleSQL, onToggleModel, onToggleMining, onToggleFlow, onBuyStock, onSellStock, onLaunchCampaign, onBoostCampaign, onHardReset, onTogglePDF, onVisitCoffee, pilotIntroduction, onReviewPilot, aiReviewAvailable, onReviewNextQuery, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, onReviewSchemaBatch, connectedUpdate, connectedMappingOffered, connectedMappingAvailable }) => {
   const [activeTab, setActiveTab] = useState<'ops' | 'market' | 'marketing' | 'terminal'>('ops');
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -186,7 +189,8 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
         </button>
         {!accelerationUpdate.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
       </div>}
-      {state.expansionProgress.era === 'acceleration' && state.expansionProgress.transition === null && state.upgrades['pandas_scripts'] === true && (
+      {(state.expansionProgress.era === 'acceleration' || state.expansionProgress.era === 'connected_enterprise') &&
+       (state.expansionProgress.transition === null || state.expansionProgress.transition.targetEra === 'connected_enterprise') && state.upgrades['pandas_scripts'] === true && (
         <div className="shrink-0 border-b border-emerald-800/50 bg-emerald-950/30 p-3 text-xs text-slate-300">
           {schemaUpdate.step ? <>
             <p>Management update available</p>
@@ -203,6 +207,21 @@ export const Workstation: React.FC<Props> = ({ state, onManualClean, onManualAna
           </> : state.schemaBatchReview.batchesCompleted >= 2 && <p>Schema exception workflow experienced — 2 batches complete</p>}
         </div>
       )}
+      {(connectedUpdate.step || state.connectedEnterprise.productDb.connected) && <div className="shrink-0 border-b border-blue-800/50 bg-blue-950/30 p-3 text-xs text-slate-300">
+        {state.connectedEnterprise.productDb.connected && <p className="font-bold text-blue-200">CONNECTED SYSTEMS · Product DB · READ ONLY</p>}
+        {connectedUpdate.step && <>
+          <button onClick={onReviewPilot} disabled={!connectedUpdate.available}
+            className="mt-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+            {connectedUpdate.step === 'read_connection_offer' ? 'Review source context' : 'Review connected result'}
+          </button>
+          {!connectedUpdate.available && <p className="mt-1 text-slate-400">Finish the current activity to review this update.</p>}
+        </>}
+        {connectedMappingOffered && <>
+          <p className="mt-2">Connected schema batch — 20,000 fields · 3 exceptions</p>
+          <button onClick={onReviewSchemaBatch} disabled={!connectedMappingAvailable}
+            className="mt-2 px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">REVIEW CONNECTED SCHEMA EXCEPTIONS</button>
+        </>}
+      </div>}
       <div className="flex border-b border-slate-800 bg-slate-900/50 shrink-0">
           <button 
             onClick={() => setActiveTab('ops')}

@@ -2,14 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Code, Check, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
-import { RAW_HEADERS, CLEAN_HEADERS } from '../constants';
+import { RAW_HEADERS, CLEAN_HEADERS, PRODUCT_DB_FIELD_CONTEXT } from '../constants';
 
 interface Props {
   active: boolean;
   onClose: () => void;
   onComplete: (cost: number, reward: number, qualityBonus: number) => void;
   rawData: number;
-  batchReview: { attemptId: number; fieldIds: number[]; batchSize: number; autoMapped: number } | null;
+  batchReview: { attemptId: number; fieldIds: number[]; batchSize: number; autoMapped: number; connectedContext: boolean } | null;
   onBatchComplete: (attemptId: number, mappings: { rawId: number; cleanId: number }[], mistakes: number) => void;
 }
 
@@ -63,7 +63,7 @@ export const PandasMappingGame: React.FC<Props> = ({ active, onClose, onComplete
   }, [matches, level]);
 
   useEffect(() => {
-    if (!batchReview || !active || level.length !== 5 || Object.keys(matches).length !== 5) return;
+    if (!batchReview || !active || level.length !== batchReview.fieldIds.length || Object.keys(matches).length !== batchReview.fieldIds.length) return;
     setCompleted(true);
     batchTimer.current = setTimeout(() => {
       batchTimer.current = null;
@@ -126,7 +126,8 @@ export const PandasMappingGame: React.FC<Props> = ({ active, onClose, onComplete
         </div>
         {batchReview && <div className="px-4 py-3 border-b border-slate-700 bg-slate-900 text-xs text-blue-200">
           <p className="font-bold">AI BATCH MAPPING</p>
-          <p className="mt-1">{batchReview.batchSize.toLocaleString()} fields processed · {batchReview.autoMapped.toLocaleString()} mapped automatically · 5 require analyst review</p>
+          {batchReview.connectedContext && <p className="mt-1">CONNECTED CONTEXT: Product DB · READ ONLY</p>}
+          <p className="mt-1">{batchReview.batchSize.toLocaleString()} fields processed · {batchReview.autoMapped.toLocaleString()} mapped automatically · {batchReview.fieldIds.length} require analyst review</p>
           <p className="mt-1 text-slate-400">Ambiguous mappings withheld for human resolution. Automatic mappings are correct.</p>
         </div>}
 
@@ -173,7 +174,11 @@ export const PandasMappingGame: React.FC<Props> = ({ active, onClose, onComplete
                                 "bg-[#252526] border-[#3e3e42] text-[#9cdcfe] hover:bg-[#2a2d2e]"
                             )}
                         >
-                            <span>"{item.raw}"</span>
+                            {batchReview?.connectedContext ? <div>
+                              <span>"{item.raw}"</span>
+                              <p className="mt-2 text-[10px] text-slate-400">Product DB definition: {PRODUCT_DB_FIELD_CONTEXT[item.id].description}</p>
+                              <p className="text-[10px] text-slate-400">Type: {PRODUCT_DB_FIELD_CONTEXT[item.id].type} · Examples: {PRODUCT_DB_FIELD_CONTEXT[item.id].examples}</p>
+                            </div> : <span>"{item.raw}"</span>}
                             {isMatched && <ArrowRight size={14} />}
                         </button>
                     );

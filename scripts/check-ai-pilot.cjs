@@ -1,4 +1,4 @@
-// Focused S0-S6/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
+// Focused S0-S7/G1 checks using installed TypeScript, Node assertions and stubbed React/timers.
 // Browser smoke separately verifies actual rendering and persistence.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -74,6 +74,8 @@ function mount(seed = null, original = false) {
     operational: () => api.operationalRollout,
     acceleration: () => api.accelerationUpdate,
     schemaUpdate: () => api.schemaUpdate,
+    connectedUpdate: () => api.connectedUpdate,
+    connectedAvailable: () => api.connectedMappingAvailable,
     schemaAvailable: () => api.schemaBatchAvailable,
     schemaAttempt: () => api.schemaBatchAttempt && JSON.parse(JSON.stringify(api.schemaBatchAttempt)),
     deferred: () => load('constants.ts').isAscensionDeferred(slots[0]),
@@ -91,8 +93,8 @@ const progress = step => ({ era: step === 'automation_recognized' ? 'analyst' : 
 function compareTicks(seed) {
   const oldGame = mount(seed, true), newGame = mount(seed);
   for (let tick = 0; tick <= 20; tick++) {
-    const actual = newGame.state(); delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview;
-    const expected = oldGame.state(); delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview;
+    const actual = newGame.state(); delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise;
+    const expected = oldGame.state(); delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
     assert.deepEqual(actual, expected, 'baseline state at tick ' + tick);
     if (tick < 20) { oldGame.tick(); newGame.tick(); }
   }
@@ -130,7 +132,7 @@ game.action('advancePilotIntroduction', 'pilot_announced');
 game.action('establishExpansionEra', 'ai_pilot');
 game.action('advancePilotIntroduction', 'pilot_ready');
 assert.deepEqual(game.state().expansionProgress, progress('pilot_ready'));
-const after = game.state(); delete before.expansionProgress; delete before.aiReviewQueue; delete before.aiReviewDemand; delete before.schemaBatchReview; delete after.expansionProgress; delete after.aiReviewQueue; delete after.aiReviewDemand; delete after.schemaBatchReview;
+const after = game.state(); delete before.expansionProgress; delete before.aiReviewQueue; delete before.aiReviewDemand; delete before.schemaBatchReview; delete before.connectedEnterprise; delete after.expansionProgress; delete after.aiReviewQueue; delete after.aiReviewDemand; delete after.schemaBatchReview; delete after.connectedEnterprise;
 assert.deepEqual(after, before, 'acknowledgements change only progression');
 for (const blocker of ['spaghettiMode', 'pandasMode', 'sqlMode', 'modelMode', 'miningMode', 'flowMode', 'buzzwordMode', 'pdfMode', 'isAscending']) {
   const blocked = mount({ ...eligibleSeed, [blocker]: true });
@@ -167,13 +169,13 @@ for (const level of [0, 3]) for (const meeting of [false, true]) {
   manual.action('completeSQLQuery', 100, 250);
   originalSQL.action('completeSQLQuery', 100, 250);
   const currentManual = manual.state(), baselineManual = originalSQL.state();
-  delete currentManual.expansionProgress; delete currentManual.aiReviewQueue; delete currentManual.aiReviewDemand; delete currentManual.schemaBatchReview; delete baselineManual.expansionProgress; delete baselineManual.aiReviewQueue; delete baselineManual.aiReviewDemand; delete baselineManual.schemaBatchReview;
+  delete currentManual.expansionProgress; delete currentManual.aiReviewQueue; delete currentManual.aiReviewDemand; delete currentManual.schemaBatchReview; delete currentManual.connectedEnterprise; delete baselineManual.expansionProgress; delete baselineManual.aiReviewQueue; delete baselineManual.aiReviewDemand; delete baselineManual.schemaBatchReview; delete baselineManual.connectedEnterprise;
   assert.deepEqual(currentManual, baselineManual, 'ordinary SQL reward matches original source baseline');
   assert.deepEqual(manual.state().expansionProgress, progress('pilot_ready'), 'manual cannot advance pilot');
   assisted.action('completeSQLPilotQuery', attempt);
   assert.deepEqual(assisted.state().expansionProgress, progress('pilot_success'));
   const actual = assisted.state(), expected = manual.state();
-  delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview;
+  delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
   assert.deepEqual(actual, expected, 'manual/assisted rewards and meeting contributions are identical');
   assert.equal(actual.cleanData - initial.cleanData, 100 * (1 + level * 0.1));
   assert.equal(actual.pu - initial.pu, 250 * (1 + level * 0.1));
@@ -202,7 +204,7 @@ for (const interaction of ['blocking task', 'OMNISCIENCE']) {
   assisted.action('completeSQLPilotQuery', attempt);
   assert.deepEqual(assisted.state().expansionProgress, progress('pilot_success'));
   const actual = assisted.state(), expected = manual.state();
-  delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview;
+  delete actual.expansionProgress; delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise; delete expected.expansionProgress; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
   assert.deepEqual(actual, expected, 'already-executed completion follows original reward behavior during ' + interaction);
   assert.equal(assisted.presentation().available, false, 'feedback deferred during ' + interaction);
   if (interaction === 'OMNISCIENCE') {
@@ -226,7 +228,7 @@ const feedback = mount({ ...eligibleSeed, expansionProgress: progress('pilot_suc
 const feedbackBefore = feedback.state();
 feedback.action('advancePilotIntroduction', 'pilot_success');
 assert.deepEqual(feedback.state().expansionProgress, progress('demand_pending'));
-const feedbackAfter = feedback.state(); delete feedbackBefore.expansionProgress; delete feedbackBefore.aiReviewQueue; delete feedbackBefore.aiReviewDemand; delete feedbackBefore.schemaBatchReview; delete feedbackAfter.expansionProgress; delete feedbackAfter.aiReviewQueue; delete feedbackAfter.aiReviewDemand; delete feedbackAfter.schemaBatchReview;
+const feedbackAfter = feedback.state(); delete feedbackBefore.expansionProgress; delete feedbackBefore.aiReviewQueue; delete feedbackBefore.aiReviewDemand; delete feedbackBefore.schemaBatchReview; delete feedbackBefore.connectedEnterprise; delete feedbackAfter.expansionProgress; delete feedbackAfter.aiReviewQueue; delete feedbackAfter.aiReviewDemand; delete feedbackAfter.schemaBatchReview; delete feedbackAfter.connectedEnterprise;
 assert.deepEqual(feedbackAfter, feedbackBefore, 'management response adds no demand/rewards');
 assert.deepEqual(mount(feedback.save()).state().expansionProgress, progress('demand_pending'));
 compareTicks({ ...eligibleSeed, expansionProgress: progress('demand_pending') });
@@ -335,11 +337,11 @@ for (const tu of [99, 100, 135]) {
   const current = mount(seed), original = mount(seed, true);
   assert.equal(current.deferred(), false);
   for (const game of [current, original]) game.purchase('project_omniscience');
-  const actual = current.state(), expected = original.state(); delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview;
+  const actual = current.state(), expected = original.state(); delete actual.aiReviewQueue; delete actual.aiReviewDemand; delete actual.schemaBatchReview; delete actual.connectedEnterprise; delete expected.aiReviewQueue; delete expected.aiReviewDemand; delete expected.schemaBatchReview; delete expected.connectedEnterprise;
   assert.deepEqual(actual, expected, 'baseline purchase/cost/flag/log matches original at TU ' + tu);
   if (tu < 100) continue;
   for (const game of [current, original]) { game.action('ascend'); assert.equal(game.rebooting(), true); game.timeout(3000); }
-  const currentNG = current.saved(), originalNG = original.saved(); delete currentNG.expansionProgress; delete currentNG.aiReviewQueue; delete currentNG.aiReviewDemand; delete currentNG.schemaBatchReview; delete originalNG.expansionProgress; delete originalNG.aiReviewQueue; delete originalNG.aiReviewDemand; delete originalNG.schemaBatchReview;
+  const currentNG = current.saved(), originalNG = original.saved(); delete currentNG.expansionProgress; delete currentNG.aiReviewQueue; delete currentNG.aiReviewDemand; delete currentNG.schemaBatchReview; delete currentNG.connectedEnterprise; delete originalNG.expansionProgress; delete originalNG.aiReviewQueue; delete originalNG.aiReviewDemand; delete originalNG.schemaBatchReview; delete originalNG.connectedEnterprise;
   assert.deepEqual(currentNG, originalNG, 'baseline NG+ reset and prestige match original');
   assert.equal(current.reloads(), original.reloads());
 }
@@ -437,7 +439,7 @@ const capSeed = { ...activeSeed, aiReviewQueue: { pending: 12, completed: 0, wav
 const capped = mount(capSeed), ordinary = mount({ ...capSeed, aiReviewDemand: inactiveDemand });
 for (let i = 0; i < 81; i++) { capped.tick(); ordinary.tick(); }
 assert.equal(capped.state().aiReviewQueue.pending, 12); assert.equal(capped.state().aiReviewDemand.totalArrived, 0);
-const cappedState = capped.state(), ordinaryState = ordinary.state(); delete cappedState.aiReviewDemand; delete cappedState.schemaBatchReview; delete ordinaryState.aiReviewDemand; delete ordinaryState.schemaBatchReview;
+const cappedState = capped.state(), ordinaryState = ordinary.state(); delete cappedState.aiReviewDemand; delete cappedState.schemaBatchReview; delete cappedState.connectedEnterprise; delete ordinaryState.aiReviewDemand; delete ordinaryState.schemaBatchReview; delete ordinaryState.connectedEnterprise;
 assert.deepEqual(cappedState, ordinaryState, 'full queue adds no penalty, output, resource or entropy changes');
 for (const paused of [mount({ ...activeSeed, isAscending: true }), mount(activeSeed)]) {
   if (!paused.state().isAscending) paused.action('hardReset');
@@ -531,7 +533,7 @@ for(const seed of [pressureSeed,acceleratedSeed,backlogPath.save(),visible.save(
 const acceleratedCapSeed={...acceleratedSeed,aiReviewQueue:{pending:12,completed:7,wave:3},aiReviewDemand:{...acceleratedSeed.aiReviewDemand,acceleratedPeakPending:12}};
 const cap=mount(acceleratedCapSeed),capReference=mount({...acceleratedCapSeed,aiReviewDemand:{...acceleratedCapSeed.aiReviewDemand,active:false}});ticks(cap,60);ticks(capReference,60);
 assert.equal(cap.state().aiReviewDemand.acceleratedArrivals,0);assert.equal(cap.state().aiReviewDemand.totalArrived,8);assert.equal(cap.state().aiReviewQueue.pending,12);
-const capActual=cap.state(),capExpected=capReference.state();delete capActual.aiReviewDemand; delete capActual.schemaBatchReview;delete capExpected.aiReviewDemand; delete capExpected.schemaBatchReview;assert.deepEqual(capActual,capExpected,'accelerated cap no penalty');
+const capActual=cap.state(),capExpected=capReference.state();delete capActual.aiReviewDemand; delete capActual.schemaBatchReview; delete capActual.connectedEnterprise;delete capExpected.aiReviewDemand; delete capExpected.schemaBatchReview; delete capExpected.connectedEnterprise;assert.deepEqual(capActual,capExpected,'accelerated cap no penalty');
 review(cap);ticks(cap,20);assert.equal(cap.state().aiReviewQueue.pending,12);assert.equal(cap.state().aiReviewDemand.acceleratedArrivals,1);
 const abandonedAccelerated=mount(acceleratedSeed);abandonedAccelerated.action('openNextAIReview');const abandonedAcceleratedID=abandonedAccelerated.queueAttempt();
 const unfinished=mount(abandonedAccelerated.save()),unfinishedBefore=unfinished.state();unfinished.action('completeAIReviewQuery',abandonedAcceleratedID);assert.deepEqual(unfinished.state(),unfinishedBefore);
@@ -581,10 +583,54 @@ savedFirst.action('openSchemaBatchReview');assert.equal(savedFirst.schemaAttempt
 savedFirst.action('acknowledgeSchemaUpdate','schema_first_result');const secondSchemaSeed=savedFirst.save();assert.deepEqual(secondSchemaSeed.schemaBatchReview,{...firstSchema,batchSize:12000,autoMapped:11995,batchesCompleted:1});const secondOnce=savedFirst.state();savedFirst.action('acknowledgeSchemaUpdate','schema_first_result');assert.deepEqual(savedFirst.state(),secondOnce);
 savedFirst.action('openSchemaBatchReview');const secondAttempt=savedFirst.schemaAttempt();savedFirst.action('completeSchemaBatchReview',secondAttempt.id,pairsFor(savedFirst),0);assert.equal(savedFirst.state().schemaBatchReview.batchesCompleted,2);assert.equal(savedFirst.state().schemaBatchReview.active,false);savedFirst.action('closeSchemaBatchReview',secondAttempt.id);const completeTwo=savedFirst.state();savedFirst.action('completeSchemaBatchReview',secondAttempt.id,validPairs,0);savedFirst.action('acknowledgeSchemaUpdate','schema_first_result');savedFirst.action('openSchemaBatchReview');assert.deepEqual(savedFirst.state(),completeTwo,'two finite batches, no endless auto work');assert.equal(savedFirst.schemaUpdate().step,null);assert.equal(mount(savedFirst.save()).state().schemaBatchReview.batchesCompleted,2);
 for(const level of [0,3])for(const mistakes of [0,1,5,20]){
- const batch=mount({...firstSchemaSeed,prestige:{level},metricQuality:.98,tick:300});batch.action('openSchemaBatchReview');batch.tick();const before=batch.state(),manual=mount(before);manual.action('completePandasLevel',20,50,Math.max(.01,.05-mistakes*.01));batch.action('completeSchemaBatchReview',batch.schemaAttempt().id,pairsFor(batch),mistakes);const actual=batch.state(),expected=manual.state();delete actual.schemaBatchReview;delete expected.schemaBatchReview;assert.deepEqual(actual,expected,'batch economics/log/meeting parity with manual');
+ const batch=mount({...firstSchemaSeed,prestige:{level},metricQuality:.98,tick:300});batch.action('openSchemaBatchReview');batch.tick();const before=batch.state(),manual=mount(before);manual.action('completePandasLevel',20,50,Math.max(.01,.05-mistakes*.01));batch.action('completeSchemaBatchReview',batch.schemaAttempt().id,pairsFor(batch),mistakes);const actual=batch.state(),expected=manual.state();delete actual.schemaBatchReview; delete actual.connectedEnterprise;delete expected.schemaBatchReview; delete expected.connectedEnterprise;assert.deepEqual(actual,expected,'batch economics/log/meeting parity with manual');
 }
 const noRawBatch=mount({...firstSchemaSeed,rawData:19});noRawBatch.action('openSchemaBatchReview');assert.equal(noRawBatch.schemaAttempt(),null);assert.equal(noRawBatch.schemaAvailable(),false);
 const spentRawBatch=mount({...firstSchemaSeed,rawData:20});spentRawBatch.action('openSchemaBatchReview');const spentAttempt=spentRawBatch.schemaAttempt();spentRawBatch.action('completePandasLevel',20,50,.05);const spentBefore=spentRawBatch.state();spentRawBatch.action('completeSchemaBatchReview',spentAttempt.id,pairsFor(spentRawBatch),0);assert.deepEqual(spentRawBatch.state(),spentBefore,'insufficient raw at payout leaves batch unpaid/retryable');
 for(const seed of [schemaSeed,firstSchemaSeed,secondSchemaSeed,savedFirst.save()]){const gated=mount(seed),before=gated.state();assert.equal(gated.deferred(),true);gated.purchase('project_omniscience');gated.action('ascend');assert.deepEqual(gated.state(),before,'G1 preserved through schema workflow');}
 const resetSchema=mount(secondSchemaSeed);resetSchema.action('hardReset');resetSchema.timeout(2000);assert.equal(resetSchema.saved(),null);
 console.log('PASS S6: exact eligibility/defaults/deferral, two finite scales, issued five-pair authority, stale/duplicate/close/reload guards, manual baseline and batch reward parity, mistakes, SQL background arrivals and G1/reset.');
+
+// S7: one local read-only source-context batch; S6 experience stays separate.
+{
+const disconnected={productDb:{connected:false,access:'none'},readUses:0,mappingBatch:{active:false,completed:false}};
+assert.deepEqual(mount().state().connectedEnterprise,disconnected);
+assert.deepEqual(mount({connectedEnterprise:{productDb:{connected:'true',access:'read'},readUses:-1,mappingBatch:{active:1,completed:'true'}}}).state().connectedEnterprise,disconnected);
+assert.deepEqual(mount({connectedEnterprise:{productDb:{connected:true,access:'write'},readUses:'9'}}).state().connectedEnterprise,disconnected,'unknown authority never becomes write or read');
+const proof={...firstSchema,active:false,batchSize:12000,autoMapped:11995,exceptionsResolved:5,batchesCompleted:2};
+const entry={...schemaSeed,schemaBatchReview:proof,connectedEnterprise:disconnected};
+const offerProgress={era:'acceleration',transition:{targetEra:'connected_enterprise',step:'read_connection_offer'}};
+for(const era of ['analyst','automation','ai_pilot']){const denied=mount({...entry,expansionProgress:{era,transition:null}});assert.notEqual(denied.state().expansionProgress.transition?.targetEra,'connected_enterprise');const before=denied.state();denied.action('beginExpansionTransition','connected_enterprise','read_connection_offer');denied.action('connectProductDb','read');assert.deepEqual(denied.state(),before);}
+for(const batchesCompleted of [0,1]){const denied=mount({...entry,schemaBatchReview:{...proof,batchesCompleted}});assert.equal(denied.state().expansionProgress.transition,null);const before=denied.state();denied.action('beginExpansionTransition','connected_enterprise','read_connection_offer');assert.deepEqual(denied.state(),before);}
+const highScore=mount({pu:1e12,tu:1e9,prestige:{level:999}});assert.deepEqual(highScore.state().connectedEnterprise,disconnected);assert.notEqual(highScore.state().expansionProgress.transition?.targetEra,'connected_enterprise');
+const offer=mount(entry);assert.deepEqual(offer.state().expansionProgress,offerProgress);assert.equal(offer.connectedUpdate().step,'read_connection_offer');assert.deepEqual(mount(offer.save()).state().expansionProgress,offerProgress);
+assert.deepEqual(offer.state().connectedEnterprise,disconnected);ticks(offer,20);assert.equal(offer.state().aiReviewDemand.totalArrived,entry.aiReviewDemand.totalArrived+1,'SQL continues through offer');assert.equal(offer.state().connectedEnterprise.readUses,0);
+for(const access of ['none','write','delete','execute','admin','READ','',null,undefined]){const before=offer.state();offer.action('connectProductDb',access);assert.deepEqual(offer.state(),before,'only exact read accepted');}
+for(const block of ['pandasMode','sqlMode','spaghettiMode','modelMode','miningMode','flowMode','buzzwordMode','pdfMode','isAscending'].map(k=>({[k]:true})).concat([{coffeeBreak:{active:true}},{boardMeeting:{active:true}},{activeEvents:[{id:'storage_full_warning'}]},{blockingTask:{name:'Busy'}}])){const denied=mount({...offer.save(),...block}),before=denied.state();denied.action('connectProductDb','read');assert.deepEqual(denied.state(),before);}
+const beforeConnect=offer.state();offer.action('connectProductDb','read');const connected=offer.state();
+assert.deepEqual(connected.connectedEnterprise,{productDb:{connected:true,access:'read'},readUses:0,mappingBatch:{active:true,completed:false}});
+assert.deepEqual(connected.expansionProgress,{era:'acceleration',transition:{targetEra:'connected_enterprise',step:'product_db_read_connected'}});
+const actualConnect=JSON.parse(JSON.stringify(connected)),expectedConnect=JSON.parse(JSON.stringify(beforeConnect));for(const key of ['connectedEnterprise','expansionProgress']){delete actualConnect[key];delete expectedConnect[key];}assert.deepEqual(actualConnect,expectedConnect,'connection grants no reward and preserves queue/schema');
+const onceConnect=offer.state();offer.action('connectProductDb','read');offer.action('establishExpansionEra','connected_enterprise');offer.action('acknowledgeConnectedResult');assert.deepEqual(offer.state(),onceConnect,'no reconnect/skip establishment');
+const connectedSeed=offer.save();assert.deepEqual(mount(connectedSeed).state().connectedEnterprise,connectedSeed.connectedEnterprise);
+const manual=mount(connectedSeed),manualBefore=manual.state();manual.action('togglePandasMode');manual.action('completePandasLevel',20,50,.05);assert.deepEqual(manual.state().connectedEnterprise,manualBefore.connectedEnterprise);assert.deepEqual(manual.state().schemaBatchReview,proof);
+const work=mount(connectedSeed);work.action('openSchemaBatchReview');const attempt=work.schemaAttempt();assert.equal(attempt.kind,'connected');assert.equal(attempt.fieldIds.length,3);assert.equal(new Set(attempt.fieldIds).size,3);assert.equal(work.state().connectedEnterprise.readUses,1);
+const issued=work.state();work.action('openSchemaBatchReview');assert.deepEqual(work.state(),issued,'opening twice does not count another read');const pairs=pairsFor(work);
+for(const report of [pairs.slice(0,2),[pairs[0],pairs[0],pairs[2]],pairs.map((p,i)=>i===0?{rawId:p.rawId,cleanId:99}:p),[...pairs,{rawId:99,cleanId:99}]]){const before=work.state();work.action('completeSchemaBatchReview',attempt.id,report,0);assert.deepEqual(work.state(),before,'all three issued pairs required');}
+const reloaded=mount(work.save()),reloadBefore=reloaded.state();assert.equal(reloaded.schemaAttempt(),null);reloaded.action('completeSchemaBatchReview',attempt.id,pairs,0);assert.deepEqual(reloaded.state(),reloadBefore);assert.equal(reloaded.state().connectedEnterprise.readUses,1);
+work.action('closeSchemaBatchReview',attempt.id);const closed=work.state();work.action('completeSchemaBatchReview',attempt.id,pairs,0);assert.deepEqual(work.state(),closed);work.action('openSchemaBatchReview');const retry=work.schemaAttempt();assert.notEqual(retry.id,attempt.id);assert.equal(work.state().connectedEnterprise.readUses,1,'retries never inflate one-batch read proof');
+const retryBefore=work.state();work.action('closeSchemaBatchReview',attempt.id);work.action('completeSchemaBatchReview',attempt.id,pairs,0);assert.deepEqual(work.state(),retryBefore);
+const beforeArrive=work.state();ticks(work,20);assert.equal(work.state().pandasMode,true);assert.equal(work.state().aiReviewQueue.pending,beforeArrive.aiReviewQueue.pending+1);
+const beforeReward=work.state(),rewardReference=mount(beforeReward);rewardReference.action('completePandasLevel',20,50,.04);work.action('completeSchemaBatchReview',retry.id,pairsFor(work),1);const paid=work.state(),rewardExpected=rewardReference.state();
+assert.deepEqual(paid.connectedEnterprise,{productDb:{connected:true,access:'read'},readUses:1,mappingBatch:{active:false,completed:true}});assert.equal(paid.expansionProgress.transition.step,'connected_mapping_success');assert.deepEqual(paid.schemaBatchReview,proof,'S6 proof unchanged');
+const paidEconomy=JSON.parse(JSON.stringify(paid));for(const key of ['connectedEnterprise','expansionProgress']){delete paidEconomy[key];delete rewardExpected[key];}assert.deepEqual(paidEconomy,rewardExpected,'same modest mapping reward/log/quality/no meeting effect');
+work.action('completeSchemaBatchReview',retry.id,pairsFor(work),1);assert.deepEqual(work.state(),paid);work.action('closeSchemaBatchReview',retry.id);
+const result=mount(work.save());assert.equal(result.connectedUpdate().step,'connected_mapping_success');assert.equal(result.state().expansionProgress.era,'acceleration','result deferral/reload never establishes');result.action('openSchemaBatchReview');assert.equal(result.schemaAttempt(),null,'completed batch never regenerates');
+for(const block of [{sqlMode:true},{boardMeeting:{active:true}},{isAscending:true}]){const denied=mount({...result.save(),...block}),before=denied.state();denied.action('acknowledgeConnectedResult');assert.deepEqual(denied.state(),before);}
+const beforeEstablished=result.state();result.action('acknowledgeConnectedResult');assert.deepEqual(result.state().expansionProgress,{era:'connected_enterprise',transition:null});assert.deepEqual(result.state().connectedEnterprise,beforeEstablished.connectedEnterprise);assert.deepEqual(result.state().schemaBatchReview,beforeEstablished.schemaBatchReview);assert.deepEqual(result.state().aiReviewDemand,beforeEstablished.aiReviewDemand);assert.deepEqual(result.state().aiReviewQueue,beforeEstablished.aiReviewQueue);
+const restored=mount(result.save());ticks(restored,20);assert.equal(restored.state().aiReviewDemand.totalArrived,result.state().aiReviewDemand.totalArrived+1);review(restored);assert.equal(restored.state().aiReviewDemand.totalCompleted,result.state().aiReviewDemand.totalCompleted+1);assert.deepEqual(restored.state().connectedEnterprise,result.state().connectedEnterprise);
+for(const level of [0,3])for(const mistakes of [0,1,10]){const game=mount({...connectedSeed,prestige:{level},tick:300});game.action('openSchemaBatchReview');game.tick();const before=game.state(),reference=mount(before);reference.action('completePandasLevel',20,50,Math.max(.01,.05-mistakes*.01));game.action('completeSchemaBatchReview',game.schemaAttempt().id,pairsFor(game),mistakes);const actual=game.state(),expected=reference.state();for(const key of ['expansionProgress','connectedEnterprise']){delete actual[key];delete expected[key];}assert.deepEqual(actual,expected,'connected reward prestige/quality/meeting parity');}
+for(const seed of [entry,connectedSeed,work.save(),result.save()]){const gated=mount(seed),before=gated.state();assert.equal(gated.deferred(),true);gated.purchase('project_omniscience');gated.action('ascend');assert.deepEqual(gated.state(),before,'G1 through all connected steps');}
+const reset=mount(result.save());reset.action('hardReset');reset.timeout(2000);assert.equal(reset.saved(),null);
+console.log('PASS S7: exact S6-proof eligibility, offer/deferral, READ-only connection/no reward, three issued exceptions, bounded read proof, stale/duplicate/close/reload guards, modest reward, explicit establishment, retained service/connection and G1/reset.');
+}

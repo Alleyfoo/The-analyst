@@ -24,7 +24,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Terminal } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt } = useGameEngine();
+  const { state, actions, isRebooting, pilotIntroduction, sqlPilotAvailable, sqlQueueAttemptId, aiReviewAvailable, operationalRollout, aiReviewDemandActive, accelerationUpdate, schemaUpdate, schemaBatchAvailable, schemaBatchAttempt, connectedUpdate, connectedMappingOffered, connectedMappingAvailable } = useGameEngine();
   const [pilotOpen, setPilotOpen] = useState(false);
   useEffect(() => {
     if (!pilotIntroduction.available || pilotIntroduction.step === 'pilot_ready' || pilotIntroduction.step === 'rollout_review') setPilotOpen(false);
@@ -107,7 +107,9 @@ const App: React.FC = () => {
          onComplete={actions.completePandasLevel}
          rawData={state.rawData}
          batchReview={schemaBatchAttempt ? { attemptId: schemaBatchAttempt.id, fieldIds: schemaBatchAttempt.fieldIds,
-           batchSize: state.schemaBatchReview.batchSize, autoMapped: state.schemaBatchReview.autoMapped } : null}
+           batchSize: schemaBatchAttempt.kind === 'connected' ? 20000 : state.schemaBatchReview.batchSize,
+           autoMapped: schemaBatchAttempt.kind === 'connected' ? 19997 : state.schemaBatchReview.autoMapped,
+           connectedContext: schemaBatchAttempt.kind === 'connected' } : null}
          onBatchComplete={actions.completeSchemaBatchReview}
       />
 
@@ -169,7 +171,7 @@ const App: React.FC = () => {
       {pilotOpen && pilotIntroduction.available && pilotIntroduction.step && pilotIntroduction.step !== 'pilot_ready' && pilotIntroduction.step !== 'rollout_review' && (
         <AIPilotIntroduction
           step={pilotIntroduction.step}
-          onContinue={step => { if (step !== 'continuous_demand_offer' && step !== 'pressure_visible' && step !== 'review_bottleneck_visible' && step !== 'schema_introduction' && step !== 'schema_first_result') actions.advancePilotIntroduction(step); }}
+          onContinue={step => { if (step !== 'continuous_demand_offer' && step !== 'pressure_visible' && step !== 'review_bottleneck_visible' && step !== 'schema_introduction' && step !== 'schema_first_result' && step !== 'read_connection_offer' && step !== 'connected_mapping_success') actions.advancePilotIntroduction(step); }}
           onLater={() => setPilotOpen(false)}
         />
       )}
@@ -185,6 +187,13 @@ const App: React.FC = () => {
         <AIPilotIntroduction step={schemaUpdate.step}
           onContinue={step => { if (step === 'schema_introduction' || step === 'schema_first_result') { actions.acknowledgeSchemaUpdate(step); setPilotOpen(false); } }}
           onLater={() => setPilotOpen(false)} />
+      )}
+      {pilotOpen && connectedUpdate.step && connectedUpdate.available && (
+        <AIPilotIntroduction step={connectedUpdate.step}
+          onContinue={step => {
+            if (step === 'read_connection_offer') { actions.connectProductDb('read'); setPilotOpen(false); }
+            if (step === 'connected_mapping_success') { actions.acknowledgeConnectedResult(); setPilotOpen(false); }
+          }} onLater={() => setPilotOpen(false)} />
       )}
 
       {/* Top Bar */}
@@ -237,6 +246,9 @@ const App: React.FC = () => {
                 schemaUpdate={schemaUpdate}
                 schemaBatchAvailable={schemaBatchAvailable}
                 onReviewSchemaBatch={actions.openSchemaBatchReview}
+                connectedUpdate={connectedUpdate}
+                connectedMappingOffered={connectedMappingOffered}
+                connectedMappingAvailable={connectedMappingAvailable}
             />
         </div>
 
